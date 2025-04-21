@@ -1,0 +1,12 @@
+# Ignorar o ambiente virtual
+.venv/
+
+# Ignorar caches do Python
+__pycache__/
+*.pyc
+
+# Ignorar arquivos de configuração local
+*.env
+
+# Ignorar arquivos de credenciais
+credentials.json
