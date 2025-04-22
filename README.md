@@ -59,3 +59,28 @@ Sistema inteligente de atendimento automatizado para clínicas, com agendamento 
 - [ ] Preparar `.env.example` para produção
 - [ ] Criar Dockerfile (opcional)
 - [ ] Deploy na nuvem (Render, Railway, Heroku, GCP etc.)
+
+---
+
+🗂️ Arquitetura do Projeto
+
+O HealthGPT adota uma arquitetura modular e escalável baseada em boas práticas com Python + FastAPI. A estrutura é dividida em camadas claras de responsabilidade:
+
+HealthGPT/
+│
+├── main.py                 # Ponto de entrada da aplicação
+├── app/                    # Pacote principal da aplicação
+│   ├── api/                # Camada de controle: define rotas e endpoints
+│   ├── models/             # Modelos de dados (schemas com Pydantic)
+│   └── services/           # Camada de lógica de negócio e integrações
+
+Descrição das pastas
+main.py: ponto de inicialização da aplicação FastAPI, responsável por registrar os roteadores.
+
+app/api/: contém os módulos de rotas (calendar.py, chatgpt.py), organizados por contexto funcional.
+
+app/models/: define os modelos de dados (schemas) utilizados nas entradas e saídas das rotas.
+
+app/services/: implementa a lógica de negócio e comunicação com APIs externas (ex: Google Calendar, ChatGPT).
+
+Cada pasta contém um __init__.py para ser reconhecida como um pacote Python, permitindo importações organizadas.
