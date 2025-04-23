@@ -8,10 +8,9 @@ Sistema automatizado de agendamento de consultas via WhatsApp com integração a
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn main:app --reload
+uvicorn app.main:app --reload 
 
 # 🚀 Projeto HealthGPT
-
 Sistema inteligente de atendimento automatizado para clínicas, com agendamento de consultas via WhatsApp, integração com Google Calendar e IA conversacional com ChatGPT.
 
 ---
@@ -36,8 +35,8 @@ Sistema inteligente de atendimento automatizado para clínicas, com agendamento 
 - [x] Criar `main.py` com servidor básico FastAPI
 - [x] Criar pasta `app/` com subpastas e `__init__.py`
 - [x] Criar `app/routes/`, `app/services/`, `app/schemas/`
-- [ ] Criar `README.md` com descrição e fases do projeto
-- [ ] Criar `credentials.json` como placeholder para credenciais (Google API)
+- [x] Criar `README.md` com descrição e fases do projeto
+- [x] Criar `credentials.json` como placeholder para credenciais (Google API)
 
 ---
 

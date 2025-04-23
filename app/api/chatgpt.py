@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 router = APIRouter()
 
-@router.get("/chatgpt/test")
+@router.get("/test")
 async def test_chatgpt():
     return {"message": "ChatGPT route funcionando!"}
  
