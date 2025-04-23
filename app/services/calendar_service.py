@@ -2,6 +2,9 @@ import os
 from datetime import datetime, timedelta
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
+from dotenv import load_dotenv
+
+load_dotenv()  # <-- isso carrega o .env automaticamente
 
 # Escopo necessário para usar a API do Google Calendar
 SCOPES = ['https://www.googleapis.com/auth/calendar']
@@ -12,52 +15,61 @@ SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "credentials.
 # ID do calendário onde os eventos serão criados (você pode encontrar no Google Calendar → Configurações → ID do calendário)
 CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID")
 
+def get_calendar_service():
+    """
+    Autentica e retorna uma instância do serviço da API do Google Calendar.
+    """
+    credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    service = build('calendar', 'v3', credentials=credentials)
+    return service
+
+from datetime import datetime
+
+def validate_date(date: str):
+    try:
+        datetime.fromisoformat(date)
+    except ValueError:
+        raise ValueError("Data inválida fornecida.")
+
+from datetime import datetime, timedelta
+
 def get_available_slots(date: str) -> list[datetime]:
-    """
-    Retorna uma lista de horários disponíveis para um determinado dia.
-    """
-    service = get_calendar_service()
+    try:
+        validate_date(date)
+        service = get_calendar_service()
 
-    # Define intervalo de busca para o dia
-    start_of_day = datetime.fromisoformat(date).isoformat() + "Z"
-    end_of_day = (datetime.fromisoformat(date) + timedelta(days=1)).isoformat() + "Z"
+        start_of_day = datetime.fromisoformat(date)
+        end_of_day = start_of_day + timedelta(days=1)
 
-    events_result = service.events().list(
-        calendarId=CALENDAR_ID,
-        timeMin=start_of_day,
-        timeMax=end_of_day,
-        singleEvents=True,
-        orderBy='startTime'
-    ).execute()
+        events_result = service.events().list(
+            calendarId=CALENDAR_ID,
+            timeMin=start_of_day.isoformat() + "Z",
+            timeMax=end_of_day.isoformat() + "Z",
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
 
-    events = events_result.get('items', [])
-    
-    # Exemplo: gera horários entre 9h e 18h a cada 1 hora
-    all_slots = [
-        datetime.fromisoformat(date + f"T{hour:02d}:00:00")
-        for hour in range(9, 18)
-    ]
+        events = events_result.get('items', [])
 
-    booked_slots = [
-        datetime.fromisoformat(event['start']['dateTime'])
-        for event in events
-    ]
+        all_slots = [
+            datetime.fromisoformat(date + f"T{hour:02d}:00:00")
+            for hour in range(9, 18)
+        ]
 
-    available_slots = [slot for slot in all_slots if slot not in booked_slots]
+        def slot_is_free(slot):
+            slot_end = slot + timedelta(hours=1)
+            for event in events:
+                # Remove timezone info (convert to naive)
+                event_start = datetime.fromisoformat(event['start']['dateTime']).replace(tzinfo=None)
+                event_end = datetime.fromisoformat(event['end']['dateTime']).replace(tzinfo=None)
+                if event_start < slot_end and event_end > slot:
+                    return False
+            return True
+
+        available_slots = [slot for slot in all_slots if slot_is_free(slot)]
+    except Exception as e:
+        print("Erro ao buscar slots:", e)
+        available_slots = []
+
+    print("Slots disponíveis:", available_slots)
     return available_slots
-
-def create_calendar_event(name: str, phone: str, slot: datetime) -> str:
-    """
-    Cria um evento no Google Calendar e retorna o link do evento criado.
-    """
-    service = get_calendar_service()
-
-    event = {
-        'summary': f'Consulta com {name}',
-        'description': f'Telefone: {phone}',
-        'start': {'dateTime': slot.isoformat(), 'timeZone': 'America/Sao_Paulo'},
-        'end': {'dateTime': (slot + timedelta(minutes=30)).isoformat(), 'timeZone': 'America/Sao_Paulo'},
-    }
-
-    created_event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
-    return created_event.get('htmlLink')
