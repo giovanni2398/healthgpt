@@ -58,7 +58,7 @@ HealthGPT/
 
    Crie um arquivo `.env` na raiz do projeto com o seguinte conteúdo:
 
-   ```
+   ```bash
    OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxx
    WHATSAPP_API_TOKEN=Bearer xxxxxxxxxxxxxxxxxxx
    GOOGLE_APPLICATION_CREDENTIALS=app/secrets/credentials.json
@@ -154,7 +154,7 @@ get_available_slots("2025-04-23")
 
 Adicione seu `.env` e `credentials.json` no `.gitignore`:
 
-```
+```bash
 .env
 *.json
 ```
