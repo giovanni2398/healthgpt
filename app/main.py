@@ -3,6 +3,8 @@ from app.api import whatsapp, calendar, chatgpt
 from dotenv import load_dotenv
 load_dotenv()
 
+from app.api.whatsapp import router as whatsapp_router
+
 
 app = FastAPI(title="HealthGPT")
 
