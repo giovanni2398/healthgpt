@@ -48,6 +48,15 @@ class TestAppointmentOrchestrator(unittest.TestCase):
             # Verifica se os mocks foram chamados
             mock_create_event.assert_called_once()
             mock_send_confirmation.assert_called_once()
+            
+            # Verifica se a mensagem de lembrete foi formatada corretamente
+            reminder_message = self.orchestrator.notification_service.format_appointment_reminder(
+                patient_name=self.patient_name,
+                appointment_date=self.slot.start_time
+            )
+            self.assertIn(self.patient_name, reminder_message)
+            self.assertIn(self.slot.start_time.strftime('%d/%m/%Y'), reminder_message)
+            self.assertIn(self.slot.start_time.strftime('%H:%M'), reminder_message)
     
     def test_schedule_appointment_failure(self):
         """Testa o processo de agendamento com falha."""
