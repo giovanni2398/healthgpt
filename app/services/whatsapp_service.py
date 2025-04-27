@@ -1,5 +1,6 @@
 import os
 from typing import Dict
+from datetime import datetime
 
 from dotenv import load_dotenv
 
@@ -34,8 +35,44 @@ class WhatsAppService:
     def send_message(self, phone: str, message: str) -> bool:
         """
         Simula o envio de mensagem. Em prod, faria POST na API.
-        Retorna True se “enviado com sucesso”.
+        Retorna True se "enviado com sucesso".
         """
         print(f"[MOCK] Enviar para {phone}: {message}")
         # Aqui você usaria httpx.post(..., headers={'Authorization': self.token}, json={...})
         return True
+
+    def send_appointment_confirmation(
+        self,
+        phone: str,
+        patient_name: str,
+        appointment_date: datetime,
+        reason: str
+    ) -> bool:
+        """
+        Envia uma mensagem de confirmação de agendamento.
+        
+        Args:
+            phone: Número de telefone do paciente
+            patient_name: Nome do paciente
+            appointment_date: Data e hora do agendamento
+            reason: Motivo da consulta
+            
+        Returns:
+            bool: True se a mensagem foi enviada com sucesso
+        """
+        # Formata a data para exibição
+        formatted_date = appointment_date.strftime("%d/%m/%Y às %H:%M")
+        
+        # Cria a mensagem de confirmação
+        message = (
+            f"✅ Agendamento Confirmado!\n\n"
+            f"Olá {patient_name},\n\n"
+            f"Seu agendamento foi confirmado para:\n"
+            f"📅 Data: {formatted_date}\n"
+            f"📝 Motivo: {reason}\n\n"
+            f"Se precisar reagendar ou cancelar, entre em contato conosco.\n"
+            f"Até breve! 👋"
+        )
+        
+        # Envia a mensagem
+        return self.send_message(phone, message)

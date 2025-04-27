@@ -2,6 +2,7 @@ import os
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
 # Carrega as variáveis de ambiente do arquivo .env
 load_dotenv()
@@ -24,8 +25,6 @@ def get_calendar_service():
     # Constrói o serviço da API do Google Calendar
     service = build('calendar', 'v3', credentials=credentials)
     return service
-
-from datetime import datetime, timedelta
 
 def validate_date(date: str):
     """
@@ -95,3 +94,63 @@ def get_available_slots(date: str) -> list[datetime]:
     # Exibe os horários disponíveis
     print("Slots disponíveis:", available_slots)
     return available_slots
+
+def create_calendar_event(
+    start_time: datetime,
+    end_time: datetime,
+    patient_name: str,
+    patient_phone: str,
+    reason: str
+) -> dict:
+    """
+    Cria um evento no Google Calendar para um agendamento.
+    
+    Args:
+        start_time: Data e hora de início do evento
+        end_time: Data e hora de fim do evento
+        patient_name: Nome do paciente
+        patient_phone: Telefone do paciente
+        reason: Motivo da consulta
+    
+    Returns:
+        dict: Dados do evento criado
+    """
+    try:
+        service = get_calendar_service()
+        
+        # Formata os horários para o formato ISO 8601 com timezone
+        start_time_iso = start_time.isoformat() + "Z"
+        end_time_iso = end_time.isoformat() + "Z"
+        
+        # Cria o evento
+        event = {
+            'summary': f'Consulta: {patient_name}',
+            'description': f'Paciente: {patient_name}\nTelefone: {patient_phone}\nMotivo: {reason}',
+            'start': {
+                'dateTime': start_time_iso,
+                'timeZone': 'America/Sao_Paulo',
+            },
+            'end': {
+                'dateTime': end_time_iso,
+                'timeZone': 'America/Sao_Paulo',
+            },
+            'reminders': {
+                'useDefault': False,
+                'overrides': [
+                    {'method': 'popup', 'minutes': 30},
+                ],
+            },
+        }
+        
+        # Insere o evento no calendário
+        event = service.events().insert(
+            calendarId=CALENDAR_ID,
+            body=event
+        ).execute()
+        
+        print(f'Evento criado: {event.get("htmlLink")}')
+        return event
+        
+    except Exception as e:
+        print(f"Erro ao criar evento no calendário: {e}")
+        raise
