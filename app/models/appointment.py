@@ -17,3 +17,26 @@ class AppointmentResponse(BaseModel):
     message: str  # Mensagem explicativa
     calendar_link: Optional[str] = None  # Link do evento no Google Calendar (se criado)
     confirmed_time: Optional[datetime] = None  # Horário real da consulta confirmada
+
+class Appointment:
+    """Modelo para representar um agendamento de consulta."""
+    
+    def __init__(
+        self,
+        id: str,
+        patient_id: str,
+        slot_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        reason: str,
+        notes: Optional[str] = None
+    ):
+        self.id = id
+        self.patient_id = patient_id
+        self.slot_id = slot_id
+        self.start_time = start_time
+        self.end_time = end_time
+        self.reason = reason
+        self.notes = notes
+        self.created_at = datetime.now()
+        self.updated_at = datetime.now()
