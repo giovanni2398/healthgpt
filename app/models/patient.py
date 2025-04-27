@@ -18,6 +18,13 @@ class PatientType(str, Enum):
     INSURANCE = "insurance"
     UNDEFINED = "undefined"
 
+class InsuranceStatus(str, Enum):
+    """Status da validação do convênio."""
+    PENDING = "pending"  # Aguardando escolha do convênio
+    WAITING_DOCS = "waiting_docs"  # Aguardando envio dos documentos
+    VALIDATED = "validated"  # Convênio validado e documentos recebidos
+    INVALID = "invalid"  # Convênio não aceito
+
 class Patient(BaseModel):
     """Modelo de paciente com gerenciamento de estado."""
     id: str
@@ -26,7 +33,7 @@ class Patient(BaseModel):
     email: Optional[str] = None
     patient_type: PatientType = PatientType.UNDEFINED
     insurance_id: Optional[str] = None
-    insurance_card_number: Optional[str] = None
+    insurance_status: InsuranceStatus = InsuranceStatus.PENDING
     
     # Campos de estado
     conversation_state: ConversationState = ConversationState.INITIAL

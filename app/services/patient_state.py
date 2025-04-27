@@ -1,6 +1,7 @@
 from typing import Dict, Optional
 from datetime import datetime
-from ..models.patient import Patient, PatientType, ConversationState
+from ..models.patient import Patient, PatientType, ConversationState, InsuranceStatus
+from ..services.insurance_service import InsuranceService
 
 class PatientStateService:
     """Serviço para gerenciamento de estado dos pacientes."""
@@ -8,6 +9,7 @@ class PatientStateService:
     def __init__(self):
         # Simula um banco de dados de pacientes
         self._patients: Dict[str, Patient] = {}
+        self.insurance_service = InsuranceService()
 
     def get_or_create_patient(self, phone: str) -> Patient:
         """
@@ -32,8 +34,7 @@ class PatientStateService:
         name: Optional[str] = None,
         email: Optional[str] = None,
         patient_type: Optional[PatientType] = None,
-        insurance_id: Optional[str] = None,
-        insurance_card_number: Optional[str] = None
+        insurance_id: Optional[str] = None
     ) -> Patient:
         """Atualiza informações do paciente."""
         patient = self.get_patient(patient_id)
@@ -48,8 +49,14 @@ class PatientStateService:
             patient.patient_type = patient_type
         if insurance_id:
             patient.insurance_id = insurance_id
-        if insurance_card_number:
-            patient.insurance_card_number = insurance_card_number
+            # Atualiza o status do convênio
+            accepted_plans = [plan.id for plan in self.insurance_service.get_accepted_plans()]
+            if insurance_id in accepted_plans:
+                patient.insurance_status = InsuranceStatus.WAITING_DOCS
+                # Registra o convênio no serviço de convênios
+                self.insurance_service.register_insurance(patient_id, insurance_id)
+            else:
+                patient.insurance_status = InsuranceStatus.INVALID
 
         return patient
 
@@ -66,6 +73,30 @@ class PatientStateService:
         patient.update_state(new_state)
         return patient
 
+    def mark_insurance_documents_received(
+        self,
+        patient_id: str,
+        insurance_id: str
+    ) -> Patient:
+        """Marca que os documentos do convênio foram recebidos."""
+        patient = self.get_patient(patient_id)
+        if not patient:
+            raise ValueError(f"Paciente {patient_id} não encontrado")
+
+        if patient.insurance_id != insurance_id:
+            raise ValueError("Convênio não corresponde ao registrado")
+
+        # Marca documentos como recebidos no serviço de convênios
+        self.insurance_service.mark_documents_received(patient_id, insurance_id)
+        
+        # Atualiza status do paciente
+        patient.insurance_status = InsuranceStatus.VALIDATED
+        
+        # Atualiza estado da conversa para agendamento
+        patient.conversation_state = ConversationState.SCHEDULING
+        
+        return patient
+
     def get_next_question(self, patient: Patient) -> str:
         """
         Retorna a próxima pergunta baseada no estado atual do paciente.
@@ -79,13 +110,14 @@ class PatientStateService:
                    "1 - Particular\n"
                    "2 - Convênio")
         
-        if (patient.patient_type == PatientType.INSURANCE and 
-            not patient.insurance_id):
-            return "Qual é o seu convênio?"
-        
-        if (patient.patient_type == PatientType.INSURANCE and 
-            not patient.insurance_card_number):
-            return "Qual é o número da sua carteirinha do convênio?"
+        if patient.patient_type == PatientType.INSURANCE:
+            if not patient.insurance_id:
+                return "Qual é o seu convênio?"
+            elif patient.insurance_status == InsuranceStatus.WAITING_DOCS:
+                return ("Por favor, envie uma foto do seu documento de identificação "
+                       "e da sua carteirinha do convênio.")
+            elif patient.insurance_status == InsuranceStatus.INVALID:
+                return "Desculpe, não atendemos este convênio. Gostaria de agendar como particular?"
         
         if not patient.email:
             return "Qual é o seu e-mail para envio da confirmação?"

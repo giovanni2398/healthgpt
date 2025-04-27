@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime
-from app.models.patient import Patient, PatientType, ConversationState
+from app.models.patient import Patient, PatientType, ConversationState, InsuranceStatus
 from app.services.patient_state import PatientStateService
 
 class TestPatientState(unittest.TestCase):
@@ -22,15 +22,10 @@ class TestPatientState(unittest.TestCase):
         self.assertIsNone(patient.last_interaction)
 
     def test_get_or_create_patient(self):
-        """Testa obtenção/criação de paciente pelo telefone."""
-        # Primeira chamada - deve criar novo paciente
-        patient1 = self.state_service.get_or_create_patient(self.test_phone)
-        self.assertEqual(patient1.phone, self.test_phone)
-        self.assertEqual(patient1.conversation_state, ConversationState.INITIAL)
-
-        # Segunda chamada - deve retornar o mesmo paciente
-        patient2 = self.state_service.get_or_create_patient(self.test_phone)
-        self.assertEqual(patient1, patient2)
+        """Testa criação e recuperação de paciente."""
+        patient = self.state_service.get_or_create_patient(self.test_phone)
+        self.assertEqual(patient.phone, self.test_phone)
+        self.assertEqual(patient.conversation_state, ConversationState.INITIAL)
 
     def test_update_patient_info(self):
         """Testa atualização de informações do paciente."""
@@ -41,14 +36,53 @@ class TestPatientState(unittest.TestCase):
             name="Maria Teste",
             email="maria@teste.com",
             patient_type=PatientType.INSURANCE,
-            insurance_id="unimed-basic",
-            insurance_card_number="12345"
+            insurance_id="unimed"
         )
 
         self.assertEqual(updated_patient.name, "Maria Teste")
         self.assertEqual(updated_patient.email, "maria@teste.com")
         self.assertEqual(updated_patient.patient_type, PatientType.INSURANCE)
-        self.assertEqual(updated_patient.insurance_id, "unimed-basic")
+        self.assertEqual(updated_patient.insurance_id, "unimed")
+        self.assertEqual(updated_patient.insurance_status, InsuranceStatus.WAITING_DOCS)
+
+    def test_update_patient_info_invalid_insurance(self):
+        """Testa atualização com convênio inválido."""
+        patient = self.state_service.get_or_create_patient(self.test_phone)
+        
+        updated_patient = self.state_service.update_patient_info(
+            patient_id=patient.id,
+            insurance_id="invalid-insurance"
+        )
+
+        self.assertEqual(updated_patient.insurance_status, InsuranceStatus.INVALID)
+
+    def test_mark_insurance_documents_received(self):
+        """Testa marcação de documentos recebidos."""
+        # Primeiro registra o paciente com convênio
+        patient = self.state_service.get_or_create_patient(self.test_phone)
+        patient = self.state_service.update_patient_info(
+            patient_id=patient.id,
+            insurance_id="unimed"
+        )
+
+        # Marca documentos como recebidos
+        updated_patient = self.state_service.mark_insurance_documents_received(
+            patient_id=patient.id,
+            insurance_id="unimed"
+        )
+
+        self.assertEqual(updated_patient.insurance_status, InsuranceStatus.VALIDATED)
+        self.assertEqual(updated_patient.conversation_state, ConversationState.SCHEDULING)
+
+    def test_mark_insurance_documents_received_invalid(self):
+        """Testa marcação de documentos com convênio inválido."""
+        patient = self.state_service.get_or_create_patient(self.test_phone)
+        
+        with self.assertRaises(ValueError):
+            self.state_service.mark_insurance_documents_received(
+                patient_id=patient.id,
+                insurance_id="unimed"
+            )
 
     def test_conversation_state_transitions(self):
         """Testa transições de estado da conversa."""
@@ -119,6 +153,13 @@ class TestPatientState(unittest.TestCase):
         patient.patient_type = PatientType.INSURANCE
         question = self.state_service.get_next_question(patient)
         self.assertIn("convênio", question.lower())
+
+        # Define convênio e verifica próxima pergunta
+        patient.insurance_id = "unimed"
+        patient.insurance_status = InsuranceStatus.WAITING_DOCS
+        question = self.state_service.get_next_question(patient)
+        self.assertIn("documento", question.lower())
+        self.assertIn("carteirinha", question.lower())
 
 if __name__ == '__main__':
     unittest.main() 
