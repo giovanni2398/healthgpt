@@ -20,6 +20,16 @@ class ChatGPTService:
     def generate_response(self, prompt: str, system_message: str = None) -> str:
         """
         Generate a response using OpenAI's GPT model.
+        
+        Args:
+            prompt (str): The user's message or prompt
+            system_message (str, optional): A system message to guide the model's behavior
+            
+        Returns:
+            str: The generated response
+            
+        Raises:
+            Exception: If there's an error calling the OpenAI API
         """
         try:
             messages = []

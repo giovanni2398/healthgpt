@@ -50,6 +50,7 @@ def test_generate_response(chatgpt_service_with_mock, mock_openai_response):
     assert response == "Default mock response"
     mock_create.assert_called_once()
     call_args = mock_create.call_args[1]
+    
     assert call_args['messages'] == [
         {"role": "system", "content": system_message},
         {"role": "user", "content": prompt}
@@ -60,6 +61,7 @@ def test_analyze_patient_type_insurance(chatgpt_service_with_mock, mock_openai_r
     service, mock_create = chatgpt_service_with_mock
     message = "I want to schedule with my Unimed insurance"
     json_response = '''
+
     {
         "type": "insurance",
         "insurance_name": "Unimed",
