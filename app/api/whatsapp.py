@@ -29,19 +29,16 @@ async def whatsapp_webhook(msg: IncomingMessage):
       { "success": true, "detail": "...", "to": "+5511999999999" }
     """
     try:
-        # Processa a mensagem recebida (mock)
+        # Processa a mensagem recebida
         incoming = {"from": msg.from_, "text": msg.text}
-        data = service.receive_message(incoming)
+        data = await service.receive_message(incoming)
 
-        # Exemplo de resposta automática (aqui, ecoamos o texto)
-        reply_text = f"Você disse: {data['text']}"
-
-        # Mock de envio
-        sent = service.send_message(data['phone'], reply_text)
+        # Envia a resposta gerada pelo ChatGPT
+        sent = service.send_message(data['phone'], data['response'])
 
         if not sent:
             raise RuntimeError("Falha no envio da mensagem")
 
-        return OutgoingMessage(success=True, detail="Mensagem enviada (mock)", to=data["phone"])
+        return OutgoingMessage(success=True, detail="Mensagem enviada com sucesso", to=data["phone"])
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

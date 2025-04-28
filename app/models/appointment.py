@@ -25,7 +25,7 @@ class Appointment:
         self,
         id: str,
         patient_id: str,
-        patient_name: str,
+        name: str,
         start_time: datetime,
         end_time: datetime,
         reason: str,
@@ -37,7 +37,7 @@ class Appointment:
     ):
         self.id = id
         self.patient_id = patient_id
-        self.patient_name = patient_name
+        self.name = name
         self.start_time = start_time
         self.end_time = end_time
         self.reason = reason
@@ -54,7 +54,7 @@ class Appointment:
         return {
             "id": self.id,
             "patient_id": self.patient_id,
-            "patient_name": self.patient_name,
+            "name": self.name,
             "start_time": self.start_time.isoformat(),
             "end_time": self.end_time.isoformat(),
             "reason": self.reason,

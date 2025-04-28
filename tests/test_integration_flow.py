@@ -1,5 +1,5 @@
+import pytest
 from datetime import datetime, timedelta
-import unittest
 from unittest.mock import patch, MagicMock
 
 from app.services.appointment_orchestrator import AppointmentOrchestrator
@@ -7,8 +7,9 @@ from app.services.notification_service import NotificationService
 from app.services.notification_log_service import NotificationLogService
 from app.services.whatsapp_service import WhatsAppService
 
-class TestIntegrationFlow(unittest.TestCase):
-    def setUp(self):
+class TestIntegrationFlow:
+    @pytest.fixture(autouse=True)
+    def setup(self):
         """Configura o ambiente de teste."""
         self.orchestrator = AppointmentOrchestrator()
         # Initialize WhatsApp and Notification services with proper dependency injection
@@ -25,17 +26,20 @@ class TestIntegrationFlow(unittest.TestCase):
         
         # Cria um slot para teste
         now = datetime.now()
-        self.slot = self.orchestrator.scheduling_service.slot_service.create_slot(
+        self.slot_id = self.orchestrator.scheduling_service.slot_service.create_slot(
             start_time=now + timedelta(days=1, hours=10),
-            end_time=now + timedelta(days=1, hours=10, minutes=30)
+            end_time=now + timedelta(days=1, hours=11)
         )
     
     @patch('app.services.appointment_orchestrator.create_calendar_event')
-    @patch('app.services.whatsapp_service.WhatsAppService.send_message')
-    def test_private_appointment_flow(self, mock_send_message, mock_create_event):
+    def test_private_appointment_flow(self, mock_create_event):
         """Testa o fluxo completo de agendamento particular."""
         # Configura os mocks
-        mock_send_message.return_value = True
+        mock_whatsapp_service = MagicMock(spec=WhatsAppService)
+        mock_whatsapp_service.send_message.return_value = True
+        mock_whatsapp_service.send_appointment_confirmation.return_value = True
+        self.orchestrator.whatsapp_service = mock_whatsapp_service
+        
         mock_create_event.return_value = {"id": "event123"}
         
         # Tenta agendar
@@ -43,25 +47,28 @@ class TestIntegrationFlow(unittest.TestCase):
             patient_id=self.patient_id,
             patient_name=self.patient_name,
             patient_phone=self.patient_phone,
-            slot_id=self.slot.id,
+            slot_id=self.slot_id,
             reason=self.reason,
             is_private=True,
             id_document_url="http://example.com/id.pdf"
         )
         
         # Verifica se o agendamento foi bem sucedido
-        self.assertTrue(success)
+        assert success is True
         
         # Verifica se os mocks foram chamados
         mock_create_event.assert_called_once()
-        mock_send_message.assert_called()
+        mock_whatsapp_service.send_appointment_confirmation.assert_called_once()
     
     @patch('app.services.appointment_orchestrator.create_calendar_event')
-    @patch('app.services.whatsapp_service.WhatsAppService.send_message')
-    def test_insurance_appointment_flow(self, mock_send_message, mock_create_event):
+    def test_insurance_appointment_flow(self, mock_create_event):
         """Testa o fluxo completo de agendamento por convênio."""
         # Configura os mocks
-        mock_send_message.return_value = True
+        mock_whatsapp_service = MagicMock(spec=WhatsAppService)
+        mock_whatsapp_service.send_message.return_value = True
+        mock_whatsapp_service.send_appointment_confirmation.return_value = True
+        self.orchestrator.whatsapp_service = mock_whatsapp_service
+        
         mock_create_event.return_value = {"id": "event123"}
         
         # Tenta agendar
@@ -69,7 +76,7 @@ class TestIntegrationFlow(unittest.TestCase):
             patient_id=self.patient_id,
             patient_name=self.patient_name,
             patient_phone=self.patient_phone,
-            slot_id=self.slot.id,
+            slot_id=self.slot_id,
             reason=self.reason,
             is_private=False,
             insurance=self.insurance,
@@ -78,24 +85,25 @@ class TestIntegrationFlow(unittest.TestCase):
         )
         
         # Verifica se o agendamento foi bem sucedido
-        self.assertTrue(success)
+        assert success is True
         
         # Verifica se os mocks foram chamados
         mock_create_event.assert_called_once()
-        mock_send_message.assert_called()
+        mock_whatsapp_service.send_appointment_confirmation.assert_called_once()
     
-    @patch('app.services.whatsapp_service.WhatsAppService.send_message')
-    def test_appointment_flow_with_invalid_insurance(self, mock_send_message):
+    def test_appointment_flow_with_invalid_insurance(self):
         """Testa o fluxo de agendamento com convênio inválido."""
         # Configura o mock para retornar True
-        mock_send_message.return_value = True
+        mock_whatsapp_service = MagicMock(spec=WhatsAppService)
+        mock_whatsapp_service.send_message.return_value = True
+        self.orchestrator.whatsapp_service = mock_whatsapp_service
         
         # Tenta agendar com convênio inválido
         success = self.orchestrator.schedule_appointment(
             patient_id=self.patient_id,
             patient_name=self.patient_name,
             patient_phone=self.patient_phone,
-            slot_id=self.slot.id,
+            slot_id=self.slot_id,
             reason=self.reason,
             is_private=False,
             insurance="Convênio Inválido",
@@ -104,13 +112,10 @@ class TestIntegrationFlow(unittest.TestCase):
         )
         
         # Verifica se o agendamento falhou
-        self.assertFalse(success)
+        assert success is False
         
         # Verifica se a mensagem de erro foi enviada
-        mock_send_message.assert_called_with(
+        mock_whatsapp_service.send_message.assert_called_with(
             self.patient_phone,
             "Desculpe, mas não atendemos este convênio. Por favor, verifique os convênios aceitos."
-        )
-
-if __name__ == '__main__':
-    unittest.main() 
+        ) 

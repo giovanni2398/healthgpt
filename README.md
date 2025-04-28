@@ -102,18 +102,95 @@ HealthGPT/
 
 4. **Configurar variáveis de ambiente**
 
-   Crie um arquivo `.env` na raiz do projeto com o seguinte conteúdo:
+   Crie um arquivo `.env` na raiz do projeto com as seguintes variáveis:
 
    ```bash
-   OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxx
-   WHATSAPP_API_TOKEN=Bearer xxxxxxxxxxxxxxxxxxx
-   GOOGLE_APPLICATION_CREDENTIALS=app/secrets/credentials.json
-   GOOGLE_CALENDAR_ID=seu_id_do_calendario@group.calendar.google.com
+   # OpenAI Configuration
+   OPENAI_API_KEY=your_openai_api_key
+   OPENAI_MODEL=gpt-3.5-turbo
+
+   # Google Calendar Configuration
+   GOOGLE_CALENDAR_ID=your_calendar_id@group.calendar.google.com
+   GOOGLE_APPLICATION_CREDENTIALS=path/to/your/credentials.json
+
+   # WhatsApp Configuration
+   WHATSAPP_TOKEN=your_whatsapp_token
+   WHATSAPP_PHONE_NUMBER_ID=your_phone_number_id
+   VERIFY_TOKEN=your_verify_token
+
+   # Application Configuration
+   DEBUG=False
+   PORT=8000
+   HOST=0.0.0.0
+
+   # Database Configuration
+   DATABASE_URL=sqlite:///./health_gpt.db
+
+   # Notification Configuration
+   NOTIFICATION_ENABLED=True
+   NOTIFICATION_INTERVAL=60
+
+   # Clinic Configuration
+   CLINIC_NAME=HealthGPT Nutrition Clinic
+   CLINIC_ADDRESS=123 Health Street
+   CLINIC_PHONE=+1234567890
+   CLINIC_EMAIL=contact@healthgpt.com
+
+   # Appointment Configuration
+   APPOINTMENT_DURATION=60
+   MIN_SCHEDULE_NOTICE=24
+   MAX_SCHEDULE_ADVANCE=30
    ```
+
+   ### Descrição das Variáveis de Ambiente
+
+   #### OpenAI Configuration
+
+   - `OPENAI_API_KEY`: Chave de API da OpenAI para integração com ChatGPT
+   - `OPENAI_MODEL`: Modelo GPT a ser utilizado (default: gpt-3.5-turbo)
+
+   #### Google Calendar Configuration
+
+   - `GOOGLE_CALENDAR_ID`: ID do calendário do Google para agendamentos
+   - `GOOGLE_APPLICATION_CREDENTIALS`: Caminho para o arquivo de credenciais do Google Cloud
+
+   #### WhatsApp Configuration
+
+   - `WHATSAPP_TOKEN`: Token de acesso à API do WhatsApp Business
+   - `WHATSAPP_PHONE_NUMBER_ID`: ID do número de telefone no WhatsApp Business
+   - `VERIFY_TOKEN`: Token de verificação para webhook do WhatsApp
+
+   #### Application Configuration
+
+   - `DEBUG`: Modo de debug (True/False)
+   - `PORT`: Porta da aplicação (default: 8000)
+   - `HOST`: Host da aplicação (default: 0.0.0.0)
+
+   #### Database Configuration
+
+   - `DATABASE_URL`: URL de conexão com o banco de dados
+
+   #### Notification Configuration
+
+   - `NOTIFICATION_ENABLED`: Habilita/desabilita notificações
+   - `NOTIFICATION_INTERVAL`: Intervalo entre notificações em minutos
+
+   #### Clinic Configuration
+
+   - `CLINIC_NAME`: Nome da clínica
+   - `CLINIC_ADDRESS`: Endereço da clínica
+   - `CLINIC_PHONE`: Telefone da clínica
+   - `CLINIC_EMAIL`: Email da clínica
+
+   #### Appointment Configuration
+
+   - `APPOINTMENT_DURATION`: Duração padrão das consultas em minutos
+   - `MIN_SCHEDULE_NOTICE`: Antecedência mínima para agendamento em horas
+   - `MAX_SCHEDULE_ADVANCE`: Antecedência máxima para agendamento em dias
 
 ---
 
-## 🧱 Fases do Projeto
+## �� Fases do Projeto
 
 - **Fase 1 – Integração com Google Calendar** ✅
 
@@ -176,6 +253,19 @@ python -m pytest tests/models/ -v
 # Testes de serviços
 python -m pytest tests/services/ -v
 ```
+
+---
+
+## 🏛️ Arquitetura Atual e Próximos Passos
+
+Atualmente, o backend opera de forma **síncrona**. Isso significa que operações que dependem de respostas externas (como chamadas às APIs do Google, OpenAI ou WhatsApp) bloqueiam a execução até que sejam concluídas. Para um sistema de baixo volume, isso pode ser aceitável.
+
+**Próximos Passos / Melhorias Futuras:**
+
+- **Implementação de Assincronicidade:** Refatorar o código para usar `async` e `await`.
+  - **Benefícios:** Maior performance e escalabilidade, especialmente sob carga. O sistema poderá lidar com múltiplas requisições simultâneas de forma mais eficiente, sem que uma requisição lenta bloqueie as outras.
+  - **Tecnologias:** Utilizar bibliotecas como `asyncio`, `httpx` (para chamadas HTTP assíncronas) e frameworks compatíveis como FastAPI.
+  - **Status:** Planejado para desenvolvimento posterior.
 
 ---
 

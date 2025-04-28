@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
 from uuid import uuid4
 
 from app.models.appointment import Appointment
@@ -9,8 +9,8 @@ from app.services.slot_service import SlotService
 class SchedulingService:
     """Serviço para gerenciar agendamentos."""
     
-    def __init__(self):
-        self.slot_service = SlotService()
+    def __init__(self, slot_service: SlotService = None):
+        self.slot_service = slot_service or SlotService()
         self.appointments: List[Appointment] = []
     
     def create_appointment(
@@ -20,32 +20,40 @@ class SchedulingService:
         slot_id: str,
         reason: str,
         is_private: bool = True,
-        insurance: Optional[str] = None,
-        insurance_card_url: Optional[str] = None,
-        id_document_url: Optional[str] = None
-    ) -> Optional[Appointment]:
-        """Cria um novo agendamento."""
+        insurance: str = None,
+        insurance_card_url: str = None,
+        id_document_url: str = None
+    ) -> Appointment:
+        """
+        Cria um novo agendamento, reservando o slot.
+        """
+        # Busca o slot e verifica disponibilidade
         slot = self.slot_service.get_slot(slot_id)
-        if not slot or not slot.is_available:
-            return None
-            
+        if slot is None or not slot.get("is_available", False):
+            raise ValueError("Horário não está mais disponível")
+
+        # Cria o agendamento
         appointment = Appointment(
             id=str(uuid4()),
             patient_id=patient_id,
-            patient_name=patient_name,
-            start_time=slot.start_time,
-            end_time=slot.end_time,
+            name=patient_name,
+            start_time=slot["start_time"],
+            end_time=slot["end_time"],
             reason=reason,
             is_private=is_private,
             insurance=insurance,
             insurance_card_url=insurance_card_url,
-            id_document_url=id_document_url
+            id_document_url=id_document_url,
+            status="scheduled"
         )
-        
-        if self.slot_service.book_slot(slot_id, appointment.id):
-            self.appointments.append(appointment)
-            return appointment
-        return None
+
+        # Salva o agendamento
+        self.appointments.append(appointment)
+
+        # Marca o slot como reservado
+        self.slot_service.reserve_slot(slot_id)
+
+        return appointment
     
     def get_appointment(self, appointment_id: str) -> Optional[Appointment]:
         """Retorna um agendamento pelo ID."""
@@ -70,22 +78,13 @@ class SchedulingService:
         ]
         return sorted(appointments, key=lambda x: x.start_time)
     
-    def cancel_appointment(self, appointment_id: str) -> bool:
+    def cancel_appointment(self, slot_id: str) -> bool:
         """Cancela um agendamento."""
-        appointment = self.get_appointment(appointment_id)
-        if appointment and appointment.status == "scheduled":
-            appointment.status = "cancelled"
-            self.slot_service.free_slot(appointment.slot_id)
-            return True
-        return False
+        return self.slot_service.free_slot(slot_id)
     
-    def get_available_slots(
-        self,
-        start_date: datetime,
-        end_date: datetime
-    ) -> List[TimeSlot]:
+    def get_available_slots(self, start_range: datetime, end_range: datetime) -> List[Dict]:
         """Retorna os slots disponíveis para agendamento."""
-        return self.slot_service.get_available_slots(start_date, end_date)
+        return self.slot_service.get_available_slots(start_range, end_range)
 
     def generate_available_slots(
         self,
@@ -98,4 +97,16 @@ class SchedulingService:
             start_date=start_date,
             end_date=end_date,
             interval_minutes=interval_minutes
-        ) 
+        )
+
+    def create_appointment_slot(self, start_time: datetime, end_time: datetime) -> str:
+        """Creates a new appointment slot."""
+        return self.slot_service.create_slot(start_time, end_time)
+    
+    def schedule_appointment(self, slot_id: str) -> bool:
+        """Schedules an appointment in the specified slot."""
+        return self.slot_service.reserve_slot(slot_id)
+    
+    def get_slot(self, slot_id: str) -> Optional[Dict]:
+        """Gets a specific slot by its ID."""
+        return self.slot_service.get_slot(slot_id) 

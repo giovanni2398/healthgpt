@@ -8,7 +8,6 @@ from app.services.notification_log_service import NotificationLogService
 from app.services.whatsapp_service import WhatsAppService
 from app.services.calendar_service import get_available_slots, create_calendar_event, get_calendar_service
 
-# Mock para simular slots disponíveis
 @pytest.fixture
 def mock_calendar_slots():
     """Simula slots disponíveis no calendário."""
@@ -21,7 +20,6 @@ def mock_calendar_slots():
         datetime.fromisoformat(f"{date}T15:00:00"),
     ]
 
-# Mock para simular evento criado
 @pytest.fixture
 def mock_calendar_event():
     """Simula um evento criado no calendário."""
@@ -30,23 +28,6 @@ def mock_calendar_event():
         'htmlLink': 'https://calendar.google.com/test_event',
         'status': 'confirmed'
     }
-
-# Mock para o serviço do Google Calendar
-@pytest.fixture
-def mock_calendar_service():
-    """Cria um mock do serviço do Google Calendar."""
-    mock_service = MagicMock()
-    
-    # Configura o mock para retornar um evento
-    mock_events = MagicMock()
-    mock_events.insert.return_value.execute.return_value = {
-        'id': 'test_event_id',
-        'htmlLink': 'https://calendar.google.com/test_event',
-        'status': 'confirmed'
-    }
-    mock_service.events.return_value = mock_events
-    
-    return mock_service
 
 @pytest.fixture
 def setup_services():
@@ -79,21 +60,23 @@ def test_data():
 class TestAppointmentFlow:
     """Testes para o fluxo completo de agendamento."""
     
-    @patch('app.services.whatsapp_service.WhatsAppService.send_message')
-    @patch('app.services.calendar_service.get_calendar_service')
+    @patch('app.services.whatsapp_service.WhatsAppService.send_message', new_callable=MagicMock)
+    @patch('app.services.whatsapp_service.WhatsAppService.send_appointment_confirmation', new_callable=MagicMock)
+    @patch('app.services.calendar_service.create_calendar_event', new_callable=MagicMock)
     def test_successful_insurance_appointment(
-        self, mock_get_service, mock_send_message,
-        setup_services, test_data, mock_calendar_slots, mock_calendar_event, mock_calendar_service
+        self, mock_create_event, mock_send_confirmation, mock_send_message,
+        setup_services, test_data, mock_calendar_slots, mock_calendar_event
     ):
         """Testa o fluxo completo de agendamento com convênio válido."""
         # Configura mocks
         mock_send_message.return_value = True
-        mock_get_service.return_value = mock_calendar_service
+        mock_send_confirmation.return_value = True
+        mock_create_event.return_value = mock_calendar_event
         
         # Cria slot para teste
         start_time = datetime.strptime(f"{test_data['appointment_date']} {test_data['appointment_time']}", "%Y-%m-%d %H:%M")
         end_time = start_time + timedelta(hours=1)
-        slot = setup_services['orchestrator'].scheduling_service.slot_service.create_slot(
+        slot_id = setup_services['orchestrator'].scheduling_service.slot_service.create_slot(
             start_time=start_time,
             end_time=end_time
         )
@@ -103,7 +86,7 @@ class TestAppointmentFlow:
             patient_id=test_data['patient_id'],
             patient_name=test_data['patient_name'],
             patient_phone=test_data['patient_phone'],
-            slot_id=slot.id,
+            slot_id=slot_id,
             reason=test_data['reason'],
             is_private=False,
             insurance=test_data['insurance'],
@@ -114,24 +97,26 @@ class TestAppointmentFlow:
         # Verifica se o agendamento foi bem sucedido
         assert success is True
         
-        # Verifica se a mensagem foi enviada
-        mock_send_message.assert_called()
+        # Verifica se as mensagens foram enviadas
+        mock_send_confirmation.assert_called_once()
     
-    @patch('app.services.whatsapp_service.WhatsAppService.send_message')
-    @patch('app.services.calendar_service.get_calendar_service')
+    @patch('app.services.whatsapp_service.WhatsAppService.send_message', new_callable=MagicMock)
+    @patch('app.services.whatsapp_service.WhatsAppService.send_appointment_confirmation', new_callable=MagicMock)
+    @patch('app.services.calendar_service.create_calendar_event', new_callable=MagicMock)
     def test_private_appointment_flow(
-        self, mock_get_service, mock_send_message,
-        setup_services, test_data, mock_calendar_slots, mock_calendar_event, mock_calendar_service
+        self, mock_create_event, mock_send_confirmation, mock_send_message,
+        setup_services, test_data, mock_calendar_slots, mock_calendar_event
     ):
         """Testa o fluxo de agendamento particular."""
         # Configura mocks
         mock_send_message.return_value = True
-        mock_get_service.return_value = mock_calendar_service
+        mock_send_confirmation.return_value = True
+        mock_create_event.return_value = mock_calendar_event
         
         # Cria slot para teste
         start_time = datetime.strptime(f"{test_data['appointment_date']} {test_data['appointment_time']}", "%Y-%m-%d %H:%M")
         end_time = start_time + timedelta(hours=1)
-        slot = setup_services['orchestrator'].scheduling_service.slot_service.create_slot(
+        slot_id = setup_services['orchestrator'].scheduling_service.slot_service.create_slot(
             start_time=start_time,
             end_time=end_time
         )
@@ -141,7 +126,7 @@ class TestAppointmentFlow:
             patient_id=test_data['patient_id'],
             patient_name=test_data['patient_name'],
             patient_phone=test_data['patient_phone'],
-            slot_id=slot.id,
+            slot_id=slot_id,
             reason=test_data['reason'],
             is_private=True,
             id_document_url="https://example.com/id.pdf"
@@ -150,10 +135,10 @@ class TestAppointmentFlow:
         # Verifica se o agendamento foi bem sucedido
         assert success is True
         
-        # Verifica se a mensagem foi enviada
-        mock_send_message.assert_called()
+        # Verifica se as mensagens foram enviadas
+        mock_send_confirmation.assert_called_once()
     
-    @patch('app.services.whatsapp_service.WhatsAppService.send_message')
+    @patch('app.services.whatsapp_service.WhatsAppService.send_message', new_callable=MagicMock)
     def test_appointment_flow_with_invalid_insurance(
         self, mock_send_message,
         setup_services, test_data
@@ -165,7 +150,7 @@ class TestAppointmentFlow:
         # Cria slot para teste
         start_time = datetime.strptime(f"{test_data['appointment_date']} {test_data['appointment_time']}", "%Y-%m-%d %H:%M")
         end_time = start_time + timedelta(hours=1)
-        slot = setup_services['orchestrator'].scheduling_service.slot_service.create_slot(
+        slot_id = setup_services['orchestrator'].scheduling_service.slot_service.create_slot(
             start_time=start_time,
             end_time=end_time
         )
@@ -175,7 +160,7 @@ class TestAppointmentFlow:
             patient_id=test_data['patient_id'],
             patient_name=test_data['patient_name'],
             patient_phone=test_data['patient_phone'],
-            slot_id=slot.id,
+            slot_id=slot_id,
             reason=test_data['reason'],
             is_private=False,
             insurance="Convênio Inválido",

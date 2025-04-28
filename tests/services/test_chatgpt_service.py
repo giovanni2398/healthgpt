@@ -1,60 +1,132 @@
 import pytest
-from types import SimpleNamespace
-
-import os
-from dotenv import load_dotenv
+from unittest.mock import patch, MagicMock
 from app.services.chatgpt_service import ChatGPTService
+from app.config.config import ACCEPTED_INSURANCE_PROVIDERS
 
+@pytest.fixture
+def mock_openai_response():
+    mock_response = MagicMock()
+    mock_response.choices = [
+        MagicMock(
+            message=MagicMock(
+                content="Test response"
+            )
+        )
+    ]
+    return mock_response
 
-def test_generate_response_success(monkeypatch):
-    """
-    Testa se generate_response retorna corretamente o conteúdo 'choices[0].message.content'
-    quando a chamada ao cliente da OpenAI for bem sucedida.
-    """
-    # Define a variável de ambiente para a chave da API
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+@pytest.fixture
+def mock_openai_client():
+    with patch('openai.OpenAI') as mock_client:
+        mock_instance = MagicMock()
+        mock_instance.chat = MagicMock()
+        mock_instance.chat.completions = MagicMock()
+        mock_instance.chat.completions.create = MagicMock()
+        mock_client.return_value = mock_instance
+        yield mock_instance
 
-    # Cria um fake response structure
-    fake_message = SimpleNamespace(content="Resposta simulada")
-    fake_choice = SimpleNamespace(message=fake_message)
-    fake_response = SimpleNamespace(choices=[fake_choice])
+@pytest.fixture
+def chatgpt_service(mock_openai_client):
+    with patch('app.services.chatgpt_service.OPENAI_API_KEY', 'test_key'):
+        service = ChatGPTService()
+        service.client = mock_openai_client
+        return service
 
-    # Instancia o serviço
+def test_generate_response(chatgpt_service, mock_openai_response):
+    # Arrange
+    prompt = "Hello"
+    system_message = "You are a test assistant"
+    chatgpt_service.client.chat.completions.create.return_value = mock_openai_response
+
+    # Act
+    response = chatgpt_service.generate_response(prompt, system_message)
+
+    # Assert
+    assert response == "Test response"
+    chatgpt_service.client.chat.completions.create.assert_called_once()
+    call_args = chatgpt_service.client.chat.completions.create.call_args[1]
+    assert call_args['messages'] == [
+        {"role": "system", "content": system_message},
+        {"role": "user", "content": prompt}
+    ]
+
+def test_analyze_patient_type_insurance(chatgpt_service, mock_openai_response):
+    # Arrange
+    message = "I want to schedule with my Unimed insurance"
+    mock_openai_response.choices[0].message.content = '''
+    {
+        "type": "insurance",
+        "insurance_name": "Unimed",
+        "confidence": 0.95
+    }
+    '''
+    chatgpt_service.client.chat.completions.create.return_value = mock_openai_response
+
+    # Act
+    result = chatgpt_service.analyze_patient_type(message)
+
+    # Assert
+    assert result["type"] == "insurance"
+    assert result["insurance_name"] == "Unimed"
+    assert result["confidence"] == 0.95
+
+def test_analyze_patient_type_private(chatgpt_service, mock_openai_response):
+    # Arrange
+    message = "I want to schedule a private appointment"
+    mock_openai_response.choices[0].message.content = '''
+    {
+        "type": "private",
+        "insurance_name": null,
+        "confidence": 0.9
+    }
+    '''
+    chatgpt_service.client.chat.completions.create.return_value = mock_openai_response
+
+    # Act
+    result = chatgpt_service.analyze_patient_type(message)
+
+    # Assert
+    assert result["type"] == "private"
+    assert result["insurance_name"] is None
+    assert result["confidence"] == 0.9
+
+def test_validate_insurance_accepted():
+    # Arrange
     service = ChatGPTService()
+    insurance_name = ACCEPTED_INSURANCE_PROVIDERS[0]
 
-    # Substitui o método create no cliente de chat
-    monkeypatch.setattr(
-        service.client.chat.completions,
-        'create',
-        lambda *args, **kwargs: fake_response
-    )
+    # Act
+    result = service.validate_insurance(insurance_name)
 
-    # Chama o método e verifica saída
-    result = service.generate_response("Olá, ChatGPT!")
-    assert result == "Resposta simulada"
+    # Assert
+    assert result is True
 
-
-def test_generate_response_error(monkeypatch):
-    """
-    Testa se generate_response retorna mensagem de erro customizada contendo o texto da exceção
-    quando a chamada ao cliente da OpenAI lança uma exceção.
-    """
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-
+def test_validate_insurance_not_accepted():
+    # Arrange
     service = ChatGPTService()
+    insurance_name = "Invalid Insurance"
 
-    # Simula exceção na API
-    def fake_create(*args, **kwargs):
-        raise Exception("API indisponível")
+    # Act
+    result = service.validate_insurance(insurance_name)
 
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    monkeypatch.setattr(
-        service.client.chat.completions,
-        'create',
-        fake_create
-    )
+    # Assert
+    assert result is False
 
-    # Chama o método
-    result = service.generate_response("Teste de erro")
-    assert "Desculpe, ocorreu um erro" in result
-    assert "API indisponível" in result 
+def test_generate_response_error(chatgpt_service):
+    # Arrange
+    chatgpt_service.client.chat.completions.create.side_effect = Exception("API Error")
+
+    # Act & Assert
+    with pytest.raises(Exception) as exc_info:
+        chatgpt_service.generate_response("test")
+    assert "Error generating response" in str(exc_info.value)
+
+def test_analyze_patient_type_invalid_json(chatgpt_service, mock_openai_response):
+    # Arrange
+    mock_openai_response.choices[0].message.content = "Invalid JSON"
+    chatgpt_service.client.chat.completions.create.return_value = mock_openai_response
+
+    # Act & Assert
+    with pytest.raises(Exception) as exc_info:
+        chatgpt_service.analyze_patient_type("test")
+    assert "Error analyzing patient type" in str(exc_info.value) 
