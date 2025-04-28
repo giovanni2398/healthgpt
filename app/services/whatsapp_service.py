@@ -1,8 +1,9 @@
 import os
 from typing import Dict
 from datetime import datetime
-
 from dotenv import load_dotenv
+
+from app.services.chatgpt_service import ChatGPTService
 
 load_dotenv()
 
@@ -11,26 +12,33 @@ load_dotenv()
 
 class WhatsAppService:
     """
-    Mock de serviço de WhatsApp. Em produção, você trocaria
-    o método send_message por uma chamada à API (ex: Twilio, 360dialog).
+    Serviço de WhatsApp que integra o ChatGPT para processamento de mensagens.
+    Em produção, você trocaria o método send_message por uma chamada à API real.
     """
 
     def __init__(self):
         # Exemplo de token no .env: WHATSAPP_API_TOKEN
         self.token = os.getenv("WHATSAPP_API_TOKEN")
+        self.chatgpt_service = ChatGPTService()
 
     def receive_message(self, payload: Dict) -> Dict:
         """
-        Simula o processamento de uma mensagem recebida pelo webhook.
+        Processa uma mensagem recebida pelo webhook.
         'payload' é o JSON enviado pelo provedor (Twilio, 360dialog etc.).
-        Aqui, extraímos só o telefone e o texto.
+        Aqui, extraímos o telefone e o texto, e processamos com ChatGPT.
         """
-        # Exemplo de payload:
-        # { "from": "+5511999999999", "text": "Olá, quero agendar" }
         phone = payload.get("from")
         text = payload.get("text")
-        # Mock de lógica: sempre responde com eco
-        return {"phone": phone, "text": text}
+        
+        # Processa a mensagem com ChatGPT
+        system_message = """
+        Você é um assistente de agendamento de uma clínica de nutrição.
+        Sua função é ajudar os pacientes a agendarem consultas.
+        Seja educado, profissional e direto.
+        """
+        response = self.chatgpt_service.generate_response(text, system_message)
+        
+        return {"phone": phone, "text": text, "response": response}
 
     def send_message(self, phone: str, message: str) -> bool:
         """
