@@ -16,9 +16,13 @@ class SchedulingService:
     def create_appointment(
         self,
         patient_id: str,
+        patient_name: str,
         slot_id: str,
         reason: str,
-        notes: Optional[str] = None
+        is_private: bool = True,
+        insurance: Optional[str] = None,
+        insurance_card_url: Optional[str] = None,
+        id_document_url: Optional[str] = None
     ) -> Optional[Appointment]:
         """Cria um novo agendamento."""
         slot = self.slot_service.get_slot(slot_id)
@@ -28,11 +32,14 @@ class SchedulingService:
         appointment = Appointment(
             id=str(uuid4()),
             patient_id=patient_id,
-            slot_id=slot_id,
+            patient_name=patient_name,
             start_time=slot.start_time,
             end_time=slot.end_time,
             reason=reason,
-            notes=notes
+            is_private=is_private,
+            insurance=insurance,
+            insurance_card_url=insurance_card_url,
+            id_document_url=id_document_url
         )
         
         if self.slot_service.book_slot(slot_id, appointment.id):

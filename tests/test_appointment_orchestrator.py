@@ -23,8 +23,8 @@ class TestAppointmentOrchestrator(unittest.TestCase):
             end_time=now + timedelta(days=1, hours=10, minutes=30)
         )
     
-    def test_schedule_appointment_success(self):
-        """Testa o processo completo de agendamento com sucesso."""
+    def test_schedule_private_appointment_success(self):
+        """Testa o processo completo de agendamento particular com sucesso."""
         # Configura os mocks
         with patch('app.services.appointment_orchestrator.create_calendar_event') as mock_create_event, \
              patch.object(self.orchestrator.whatsapp_service, 'send_appointment_confirmation') as mock_send_confirmation:
@@ -39,7 +39,48 @@ class TestAppointmentOrchestrator(unittest.TestCase):
                 patient_name=self.patient_name,
                 patient_phone=self.patient_phone,
                 slot_id=self.slot.id,
-                reason=self.reason
+                reason=self.reason,
+                is_private=True,
+                id_document_url="http://example.com/id.pdf"
+            )
+            
+            # Verifica se o processo foi bem sucedido
+            self.assertTrue(success)
+            
+            # Verifica se os mocks foram chamados
+            mock_create_event.assert_called_once()
+            mock_send_confirmation.assert_called_once()
+            
+            # Verifica se a mensagem de lembrete foi formatada corretamente
+            reminder_message = self.orchestrator.notification_service.format_appointment_reminder(
+                patient_name=self.patient_name,
+                appointment_date=self.slot.start_time
+            )
+            self.assertIn(self.patient_name, reminder_message)
+            self.assertIn(self.slot.start_time.strftime('%d/%m/%Y'), reminder_message)
+            self.assertIn(self.slot.start_time.strftime('%H:%M'), reminder_message)
+    
+    def test_schedule_insurance_appointment_success(self):
+        """Testa o processo completo de agendamento por convênio com sucesso."""
+        # Configura os mocks
+        with patch('app.services.appointment_orchestrator.create_calendar_event') as mock_create_event, \
+             patch.object(self.orchestrator.whatsapp_service, 'send_appointment_confirmation') as mock_send_confirmation:
+            
+            # Configura o comportamento dos mocks
+            mock_create_event.return_value = {"id": "event123"}
+            mock_send_confirmation.return_value = True
+            
+            # Tenta agendar
+            success = self.orchestrator.schedule_appointment(
+                patient_id=self.patient_id,
+                patient_name=self.patient_name,
+                patient_phone=self.patient_phone,
+                slot_id=self.slot.id,
+                reason=self.reason,
+                is_private=False,
+                insurance="Unimed",
+                insurance_card_url="http://example.com/insurance.pdf",
+                id_document_url="http://example.com/id.pdf"
             )
             
             # Verifica se o processo foi bem sucedido
@@ -73,7 +114,9 @@ class TestAppointmentOrchestrator(unittest.TestCase):
                 patient_name=self.patient_name,
                 patient_phone=self.patient_phone,
                 slot_id=self.slot.id,
-                reason=self.reason
+                reason=self.reason,
+                is_private=True,
+                id_document_url="http://example.com/id.pdf"
             )
             
             # Verifica se o processo falhou

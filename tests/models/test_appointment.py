@@ -7,6 +7,7 @@ def test_appointment_creation():
     now = datetime.now()
     appointment = Appointment(
         id="123",
+        patient_id="456",
         patient_name="João Silva",
         start_time=now,
         end_time=now,
@@ -18,6 +19,7 @@ def test_appointment_creation():
     )
     
     assert appointment.id == "123"
+    assert appointment.patient_id == "456"
     assert appointment.patient_name == "João Silva"
     assert appointment.start_time == now
     assert appointment.end_time == now
@@ -35,6 +37,7 @@ def test_appointment_with_insurance():
     now = datetime.now()
     appointment = Appointment(
         id="456",
+        patient_id="789",
         patient_name="Maria Santos",
         start_time=now,
         end_time=now,
@@ -55,6 +58,7 @@ def test_appointment_to_dict():
     now = datetime.now()
     appointment = Appointment(
         id="789",
+        patient_id="012",
         patient_name="Pedro Oliveira",
         start_time=now,
         end_time=now,
@@ -65,6 +69,7 @@ def test_appointment_to_dict():
     appointment_dict = appointment.to_dict()
     
     assert appointment_dict["id"] == "789"
+    assert appointment_dict["patient_id"] == "012"
     assert appointment_dict["patient_name"] == "Pedro Oliveira"
     assert appointment_dict["start_time"] == now.isoformat()
     assert appointment_dict["end_time"] == now.isoformat()

@@ -34,26 +34,17 @@ def mock_calendar_event():
 # Mock para o serviço do Google Calendar
 @pytest.fixture
 def mock_calendar_service():
-    """Cria um mock completo do serviço do Google Calendar."""
+    """Cria um mock do serviço do Google Calendar."""
     mock_service = MagicMock()
     
-    # Mock para events().list().execute()
-    mock_list = MagicMock()
-    mock_list.execute = MagicMock(return_value={'items': []})
-    
-    # Mock para events().insert().execute()
-    mock_insert = MagicMock()
-    mock_insert.execute = MagicMock(return_value={
+    # Configura o mock para retornar um evento
+    mock_events = MagicMock()
+    mock_events.insert.return_value.execute.return_value = {
         'id': 'test_event_id',
         'htmlLink': 'https://calendar.google.com/test_event',
         'status': 'confirmed'
-    })
-    
-    # Configura a estrutura do serviço mockado
-    mock_events = MagicMock()
-    mock_events.list = MagicMock(return_value=mock_list)
-    mock_events.insert = MagicMock(return_value=mock_insert)
-    mock_service.events = MagicMock(return_value=mock_events)
+    }
+    mock_service.events.return_value = mock_events
     
     return mock_service
 
@@ -76,11 +67,13 @@ def setup_services():
 def test_data():
     """Fornece dados de teste comuns."""
     return {
+        'patient_id': '123',
         'patient_name': "João Silva",
         'patient_phone': "+5511999999999",
         'insurance': "Unimed",
         'appointment_date': (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"),
-        'appointment_time': "09:00"
+        'appointment_time': "09:00",
+        'reason': "Consulta nutricional"
     }
 
 class TestAppointmentFlow:
@@ -97,109 +90,104 @@ class TestAppointmentFlow:
         mock_send_message.return_value = True
         mock_get_service.return_value = mock_calendar_service
         
-        # 1. Identifica tipo de paciente
-        patient_type = setup_services['orchestrator'].identify_patient_type(test_data['insurance'])
-        assert patient_type == "insurance"
-        
-        # 2. Valida convênio
-        is_valid_insurance = setup_services['orchestrator'].validate_insurance(test_data['insurance'])
-        assert is_valid_insurance
-        
-        # 3. Verifica disponibilidade
+        # Cria slot para teste
         start_time = datetime.strptime(f"{test_data['appointment_date']} {test_data['appointment_time']}", "%Y-%m-%d %H:%M")
         end_time = start_time + timedelta(hours=1)
-        
-        # 4. Cria agendamento
-        event = create_calendar_event(
-            start_time,
-            end_time,
-            test_data['patient_name'],
-            test_data['patient_phone'],
-            f"Consulta - {test_data['insurance']}"
+        slot = setup_services['orchestrator'].scheduling_service.slot_service.create_slot(
+            start_time=start_time,
+            end_time=end_time
         )
         
-        assert event is not None
-        assert 'id' in event
-        assert event['id'] == 'test_event_id'
+        # Tenta agendar
+        success = setup_services['orchestrator'].schedule_appointment(
+            patient_id=test_data['patient_id'],
+            patient_name=test_data['patient_name'],
+            patient_phone=test_data['patient_phone'],
+            slot_id=slot.id,
+            reason=test_data['reason'],
+            is_private=False,
+            insurance=test_data['insurance'],
+            insurance_card_url="https://example.com/insurance.pdf",
+            id_document_url="https://example.com/id.pdf"
+        )
         
-        # 5. Envia confirmação
-        confirmation_message = f"Agendamento confirmado para {test_data['appointment_date']} às {test_data['appointment_time']}"
-        setup_services['whatsapp_service'].send_message(test_data['patient_phone'], confirmation_message)
+        # Verifica se o agendamento foi bem sucedido
+        assert success is True
         
         # Verifica se a mensagem foi enviada
-        mock_send_message.assert_called_with(test_data['patient_phone'], confirmation_message)
+        mock_send_message.assert_called()
     
     @patch('app.services.whatsapp_service.WhatsAppService.send_message')
     @patch('app.services.calendar_service.get_calendar_service')
-    def test_private_patient_appointment(
+    def test_private_appointment_flow(
         self, mock_get_service, mock_send_message,
         setup_services, test_data, mock_calendar_slots, mock_calendar_event, mock_calendar_service
     ):
-        """Testa o fluxo de agendamento para paciente particular."""
+        """Testa o fluxo de agendamento particular."""
         # Configura mocks
         mock_send_message.return_value = True
         mock_get_service.return_value = mock_calendar_service
         
-        # 1. Identifica tipo de paciente
-        patient_type = setup_services['orchestrator'].identify_patient_type("Particular")
-        assert patient_type == "private"
-        
-        # 2. Verifica disponibilidade e cria agendamento
+        # Cria slot para teste
         start_time = datetime.strptime(f"{test_data['appointment_date']} {test_data['appointment_time']}", "%Y-%m-%d %H:%M")
         end_time = start_time + timedelta(hours=1)
-        
-        event = create_calendar_event(
-            start_time,
-            end_time,
-            test_data['patient_name'],
-            test_data['patient_phone'],
-            "Consulta Particular"
+        slot = setup_services['orchestrator'].scheduling_service.slot_service.create_slot(
+            start_time=start_time,
+            end_time=end_time
         )
         
-        assert event is not None
-        assert 'id' in event
-        assert event['id'] == 'test_event_id'
+        # Tenta agendar
+        success = setup_services['orchestrator'].schedule_appointment(
+            patient_id=test_data['patient_id'],
+            patient_name=test_data['patient_name'],
+            patient_phone=test_data['patient_phone'],
+            slot_id=slot.id,
+            reason=test_data['reason'],
+            is_private=True,
+            id_document_url="https://example.com/id.pdf"
+        )
         
-        # 3. Envia confirmação
-        confirmation_message = f"Agendamento particular confirmado para {test_data['appointment_date']} às {test_data['appointment_time']}"
-        setup_services['whatsapp_service'].send_message(test_data['patient_phone'], confirmation_message)
+        # Verifica se o agendamento foi bem sucedido
+        assert success is True
         
         # Verifica se a mensagem foi enviada
-        mock_send_message.assert_called_with(test_data['patient_phone'], confirmation_message)
+        mock_send_message.assert_called()
     
     @patch('app.services.whatsapp_service.WhatsAppService.send_message')
-    @patch('app.services.calendar_service.get_calendar_service')
-    def test_invalid_time_slot(
-        self, mock_get_service, mock_send_message,
-        setup_services, test_data, mock_calendar_slots, mock_calendar_service
+    def test_appointment_flow_with_invalid_insurance(
+        self, mock_send_message,
+        setup_services, test_data
     ):
-        """Testa tentativa de agendamento em horário indisponível."""
-        # Configura mock para lançar erro em horário inválido
-        def mock_insert(*args, **kwargs):
-            raise ValueError("Horário fora do expediente (9h às 17h)")
-        
-        mock_events = mock_calendar_service.events.return_value
-        mock_events.insert.side_effect = mock_insert
-        mock_get_service.return_value = mock_calendar_service
+        """Testa o fluxo de agendamento com convênio inválido."""
+        # Configura mock
         mock_send_message.return_value = True
         
-        # 1. Tenta criar agendamento em horário inválido
-        invalid_time = "08:00"  # Horário fora do expediente
-        start_time = datetime.strptime(f"{test_data['appointment_date']} {invalid_time}", "%Y-%m-%d %H:%M")
+        # Cria slot para teste
+        start_time = datetime.strptime(f"{test_data['appointment_date']} {test_data['appointment_time']}", "%Y-%m-%d %H:%M")
         end_time = start_time + timedelta(hours=1)
+        slot = setup_services['orchestrator'].scheduling_service.slot_service.create_slot(
+            start_time=start_time,
+            end_time=end_time
+        )
         
-        with pytest.raises(ValueError):
-            create_calendar_event(
-                start_time,
-                end_time,
-                test_data['patient_name'],
-                test_data['patient_phone'],
-                "Consulta"
-            )
+        # Tenta agendar com convênio inválido
+        success = setup_services['orchestrator'].schedule_appointment(
+            patient_id=test_data['patient_id'],
+            patient_name=test_data['patient_name'],
+            patient_phone=test_data['patient_phone'],
+            slot_id=slot.id,
+            reason=test_data['reason'],
+            is_private=False,
+            insurance="Convênio Inválido",
+            insurance_card_url="https://example.com/insurance.pdf",
+            id_document_url="https://example.com/id.pdf"
+        )
         
-        # 2. Verifica mensagem de erro
-        error_message = "Desculpe, este horário não está disponível. Por favor, escolha outro horário."
-        setup_services['whatsapp_service'].send_message(test_data['patient_phone'], error_message)
+        # Verifica se o agendamento falhou
+        assert success is False
         
         # Verifica se a mensagem de erro foi enviada
-        mock_send_message.assert_called_with(test_data['patient_phone'], error_message) 
+        mock_send_message.assert_called_with(
+            test_data['patient_phone'],
+            "Desculpe, mas não atendemos este convênio. Por favor, verifique os convênios aceitos."
+        ) 

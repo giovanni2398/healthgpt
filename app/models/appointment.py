@@ -25,18 +25,44 @@ class Appointment:
         self,
         id: str,
         patient_id: str,
-        slot_id: str,
+        patient_name: str,
         start_time: datetime,
         end_time: datetime,
         reason: str,
-        notes: Optional[str] = None
+        is_private: bool = True,
+        insurance: Optional[str] = None,
+        insurance_card_url: Optional[str] = None,
+        id_document_url: Optional[str] = None,
+        status: str = "scheduled"
     ):
         self.id = id
         self.patient_id = patient_id
-        self.slot_id = slot_id
+        self.patient_name = patient_name
         self.start_time = start_time
         self.end_time = end_time
         self.reason = reason
-        self.notes = notes
+        self.is_private = is_private
+        self.insurance = insurance
+        self.insurance_card_url = insurance_card_url
+        self.id_document_url = id_document_url
+        self.status = status
         self.created_at = datetime.now()
         self.updated_at = datetime.now()
+    
+    def to_dict(self) -> dict:
+        """Converte o agendamento para um dicionário."""
+        return {
+            "id": self.id,
+            "patient_id": self.patient_id,
+            "patient_name": self.patient_name,
+            "start_time": self.start_time.isoformat(),
+            "end_time": self.end_time.isoformat(),
+            "reason": self.reason,
+            "is_private": self.is_private,
+            "insurance": self.insurance,
+            "insurance_card_url": self.insurance_card_url,
+            "id_document_url": self.id_document_url,
+            "status": self.status,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat()
+        }

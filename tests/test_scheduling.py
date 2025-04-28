@@ -9,6 +9,7 @@ class TestSchedulingService(unittest.TestCase):
         """Configura o ambiente de teste."""
         self.scheduling_service = SchedulingService()
         self.patient_id = "123"
+        self.patient_name = "João Silva"
         self.reason = "Consulta de rotina"
         
         # Cria alguns slots para teste
@@ -22,20 +23,55 @@ class TestSchedulingService(unittest.TestCase):
             end_time=now + timedelta(days=1, hours=11, minutes=30)
         )
     
-    def test_create_appointment(self):
-        """Testa a criação de um agendamento."""
+    def test_create_private_appointment(self):
+        """Testa a criação de um agendamento particular."""
         # Tenta criar um agendamento
         appointment = self.scheduling_service.create_appointment(
             patient_id=self.patient_id,
+            patient_name=self.patient_name,
             slot_id=self.slot1.id,
-            reason=self.reason
+            reason=self.reason,
+            is_private=True,
+            id_document_url="http://example.com/id.pdf"
         )
         
         # Verifica se o agendamento foi criado corretamente
         self.assertIsNotNone(appointment)
         self.assertEqual(appointment.patient_id, self.patient_id)
-        self.assertEqual(appointment.slot_id, self.slot1.id)
+        self.assertEqual(appointment.patient_name, self.patient_name)
         self.assertEqual(appointment.reason, self.reason)
+        self.assertTrue(appointment.is_private)
+        self.assertIsNone(appointment.insurance)
+        self.assertIsNone(appointment.insurance_card_url)
+        self.assertEqual(appointment.id_document_url, "http://example.com/id.pdf")
+        
+        # Verifica se o slot foi marcado como ocupado
+        slot = self.scheduling_service.slot_service.get_slot(self.slot1.id)
+        self.assertFalse(slot.is_available)
+    
+    def test_create_insurance_appointment(self):
+        """Testa a criação de um agendamento por convênio."""
+        # Tenta criar um agendamento
+        appointment = self.scheduling_service.create_appointment(
+            patient_id=self.patient_id,
+            patient_name=self.patient_name,
+            slot_id=self.slot1.id,
+            reason=self.reason,
+            is_private=False,
+            insurance="Unimed",
+            insurance_card_url="http://example.com/insurance.pdf",
+            id_document_url="http://example.com/id.pdf"
+        )
+        
+        # Verifica se o agendamento foi criado corretamente
+        self.assertIsNotNone(appointment)
+        self.assertEqual(appointment.patient_id, self.patient_id)
+        self.assertEqual(appointment.patient_name, self.patient_name)
+        self.assertEqual(appointment.reason, self.reason)
+        self.assertFalse(appointment.is_private)
+        self.assertEqual(appointment.insurance, "Unimed")
+        self.assertEqual(appointment.insurance_card_url, "http://example.com/insurance.pdf")
+        self.assertEqual(appointment.id_document_url, "http://example.com/id.pdf")
         
         # Verifica se o slot foi marcado como ocupado
         slot = self.scheduling_service.slot_service.get_slot(self.slot1.id)
@@ -46,8 +82,11 @@ class TestSchedulingService(unittest.TestCase):
         # Cria um agendamento
         appointment = self.scheduling_service.create_appointment(
             patient_id=self.patient_id,
+            patient_name=self.patient_name,
             slot_id=self.slot1.id,
-            reason=self.reason
+            reason=self.reason,
+            is_private=True,
+            id_document_url="http://example.com/id.pdf"
         )
         
         # Busca os agendamentos do paciente
@@ -62,8 +101,11 @@ class TestSchedulingService(unittest.TestCase):
         # Cria um agendamento ocupando um slot
         self.scheduling_service.create_appointment(
             patient_id=self.patient_id,
+            patient_name=self.patient_name,
             slot_id=self.slot1.id,
-            reason=self.reason
+            reason=self.reason,
+            is_private=True,
+            id_document_url="http://example.com/id.pdf"
         )
         
         # Busca slots disponíveis
