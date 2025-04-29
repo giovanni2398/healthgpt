@@ -7,6 +7,7 @@ from app.services.whatsapp_service import WhatsAppService
 from app.services.conversation_state_service import ConversationStateService
 from app.services.scheduling_service import SchedulingService
 from app.services.appointment_orchestrator import AppointmentOrchestrator
+from app.services.chatgpt_service import ChatGPTService
 
 load_dotenv()
 
@@ -206,7 +207,6 @@ async def process_whatsapp_message(payload: dict):
             state_service.save_state(phone_number, new_state, context) # Reset context slightly?
             
     elif state == "AWAITING_DOCS_INSURANCE":
-        # User sent something after being asked for docs. Assume they sent them (as per requirement).
         # Move to asking about slots.
         print(f"Handling AWAITING_DOCS_INSURANCE for {phone_number}. Assuming docs received, asking for slots.")
         # TODO: Implement slot fetching and presentation
@@ -216,22 +216,43 @@ async def process_whatsapp_message(payload: dict):
         
     elif state == "AWAITING_SLOT_PREFERENCE":
         print(f"Handling AWAITING_SLOT_PREFERENCE for {phone_number}. Message: '{message_text}'")
-        # For now, assume any response means they want to see available slots.
-        # TODO: Implement more sophisticated understanding of preference (e.g., date/time parsing).
         
         if scheduling_service is None: scheduling_service = SchedulingService()
+        if chatgpt_service is None: 
+            chatgpt_service = ChatGPTService()
         
         try:
-            available_slots = scheduling_service.get_available_slots()
+            available_slots_all = scheduling_service.get_available_slots()
             
-            if not available_slots:
+            if not available_slots_all:
                 reply_message = "Desculpe, no momento não há horários disponíveis. Por favor, tente novamente mais tarde ou entre em contato conosco diretamente."
                 # Keep state or move to human? Let's keep for now, user might ask again.
                 new_state = state # Stay in AWAITING_SLOT_PREFERENCE
                 state_service.save_state(phone_number, new_state, context)
             else:
+                # Use ChatGPT to filter slots based on user preference
+                print("Attempting to filter slots with ChatGPT...")
+                try:
+                   filtered_slots = chatgpt_service.filter_slots_by_preference(
+                        user_message=message_text,
+                        available_slots=available_slots_all
+                   )
+                   print(f"ChatGPT filtering returned {len(filtered_slots)} slots.")
+                except Exception as chat_err:
+                   print(f"Error during ChatGPT slot filtering: {chat_err}. Falling back to all slots.")
+                   filtered_slots = available_slots_all # Fallback
+                   
+                if not filtered_slots:
+                   # Either no slots matched the preference, or filtering failed and there were no slots initially
+                   reply_message = "Desculpe, não encontrei horários disponíveis que correspondam à sua preferência. Gostaria de ver todos os horários disponíveis?"
+                   new_state = "AWAITING_SLOT_PREFERENCE_ALL" # New state to handle showing all after filtering failed
+                   state_service.save_state(phone_number, new_state, context) # Save context in case preference is useful
+                   # Avoid sending empty list below
+                   available_slots = [] 
+                else:
+                   available_slots = filtered_slots
+               
                 # Format the slots for display
-                # TODO: Improve formatting, maybe add button options if platform supports
                 slot_options = []
                 for slot in available_slots:
                     # Assuming slot object has 'start_time', 'end_time', 'slot_id'
@@ -245,9 +266,12 @@ async def process_whatsapp_message(payload: dict):
                     except (ValueError, KeyError):
                         slot_options.append(f"- Horário inválido (ID: {slot.get('slot_id', 'N/A')})")
                         
-                reply_message = "Aqui estão os próximos horários disponíveis:\n" + "\n".join(slot_options) + "\n\nPor favor, digite o ID do horário que deseja escolher."
-                new_state = "AWAITING_SLOT_CHOICE"
-                state_service.save_state(phone_number, new_state, new_context)
+                # Only proceed if we actually have slots to show after filtering
+                if available_slots: 
+                    reply_message = "Encontrei estes horários que correspondem à sua preferência:\n" + "\n".join(slot_options) + "\n\nPor favor, digite o ID do horário que deseja escolher."
+                    new_state = "AWAITING_SLOT_CHOICE"
+                    state_service.save_state(phone_number, new_state, new_context)
+                # Else: The 'no slots found matching preference' message was set above, and state is AWAITING_SLOT_PREFERENCE_ALL
                 
         except Exception as e:
             print(f"Error fetching or formatting slots: {e}")
@@ -310,6 +334,41 @@ async def process_whatsapp_message(payload: dict):
             reply_message = "Ocorreu um erro ao tentar reservar seu horário. Por favor, tente novamente ou escolha outro horário da lista."
             # Go back to showing the list
             new_state = "AWAITING_SLOT_PREFERENCE" # Go back to the previous state to re-trigger list fetching
+            state_service.save_state(phone_number, new_state, context)
+    
+    elif state == "AWAITING_SLOT_PREFERENCE_ALL":
+        print(f"Handling AWAITING_SLOT_PREFERENCE_ALL for {phone_number}. User wants to see all slots.")
+
+        if scheduling_service is None: scheduling_service = SchedulingService()
+
+        try:
+            available_slots_all = scheduling_service.get_available_slots()
+
+            if not available_slots_all:
+                reply_message = "Desculpe, verifiquei novamente e realmente não há horários disponíveis no momento. Por favor, entre em contato conosco diretamente para verificar futuras disponibilidades."
+                new_state = "HUMAN_TAKEOVER" # Escalate if even showing all yields nothing
+                state_service.save_state(phone_number, new_state, context)
+            else:
+                # Format all available slots
+                slot_options = []
+                for slot in available_slots_all:
+                    try:
+                        from datetime import datetime
+                        start_dt = datetime.fromisoformat(slot['start_time'])
+                        formatted_time = start_dt.strftime("%d/%m/%Y às %H:%M")
+                        slot_options.append(f"- {formatted_time} (ID: {slot['slot_id']})")
+                    except (ValueError, KeyError):
+                        slot_options.append(f"- Horário inválido (ID: {slot.get('slot_id', 'N/A')})")
+
+                reply_message = "Ok, aqui estão todos os horários disponíveis:\n" + "\n".join(slot_options) + "\n\nPor favor, digite o ID do horário que deseja escolher."
+                new_state = "AWAITING_SLOT_CHOICE"
+                state_service.save_state(phone_number, new_state, new_context)
+
+        except Exception as e:
+            print(f"Error fetching or formatting all slots in AWAITING_SLOT_PREFERENCE_ALL: {e}")
+            reply_message = "Ocorreu um erro ao buscar os horários. Por favor, tente novamente mais tarde."
+            # Go back to AWAITING_SLOT_PREFERENCE? Or stay here?
+            new_state = "AWAITING_SLOT_PREFERENCE" # Let them restart the preference process
             state_service.save_state(phone_number, new_state, context)
     
     else:
