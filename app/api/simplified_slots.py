@@ -107,8 +107,8 @@ async def get_available_slots(
 
 @simplified_slots_router.post("/book", response_model=ApiResponse)
 async def book_slot(
-    start_time: str = Query(..., description="Start time in ISO format"),
     appointment: AppointmentInfo,
+    start_time: str = Query(..., description="Start time in ISO format"),
     slot_service: SimplifiedSlotService = Depends(get_slot_service)
 ):
     """Book a slot for an appointment."""
