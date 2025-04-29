@@ -2,6 +2,7 @@ import os
 from typing import Dict
 from datetime import datetime
 from dotenv import load_dotenv
+import httpx
 
 from app.services.chatgpt_service import ChatGPTService
 
@@ -13,13 +14,20 @@ load_dotenv()
 class WhatsAppService:
     """
     Serviço de WhatsApp que integra o ChatGPT para processamento de mensagens.
-    Em produção, você trocaria o método send_message por uma chamada à API real.
+    Uses the Meta WhatsApp Cloud API to send messages.
     """
 
+    API_VERSION = "v19.0"
+
     def __init__(self):
-        # Exemplo de token no .env: WHATSAPP_API_TOKEN
         self.token = os.getenv("WHATSAPP_API_TOKEN")
+        self.phone_number_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
         self.chatgpt_service = ChatGPTService()
+
+        if not self.token or not self.phone_number_id:
+            print("Warning: WhatsApp credentials (Token or Phone Number ID) not found in .env")
+
+        self.api_url = f"https://graph.facebook.com/{self.API_VERSION}/{self.phone_number_id}/messages"
 
     def receive_message(self, payload: Dict) -> Dict:
         """
@@ -42,12 +50,46 @@ class WhatsAppService:
 
     def send_message(self, phone: str, message: str) -> bool:
         """
-        Simula o envio de mensagem. Em prod, faria POST na API.
-        Retorna True se "enviado com sucesso".
+        Sends a message using the Meta WhatsApp Cloud API.
+        Returns True if the API request was successful (status code 200).
         """
-        print(f"[MOCK] Enviar para {phone}: {message}")
-        # Aqui você usaria httpx.post(..., headers={'Authorization': self.token}, json={...})
-        return True
+        if not self.token or not self.phone_number_id:
+            print("Error: WhatsApp service not configured.")
+            return False
+
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": phone,
+            "type": "text",
+            "text": {"body": message}
+        }
+
+        try:
+            with httpx.Client() as client:
+                response = client.post(self.api_url, headers=headers, json=payload)
+
+            response.raise_for_status()
+            
+            if response.status_code == 200:
+                print(f"Message sent successfully to {phone}. Response: {response.json()}")
+                return True
+            else:
+                print(f"Failed to send message to {phone}. Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except httpx.RequestError as exc:
+            print(f"An error occurred while requesting {exc.request.url!r}: {exc}")
+            return False
+        except httpx.HTTPStatusError as exc:
+            print(f"Error response {exc.response.status_code} while requesting {exc.request.url!r}: {exc.response.text}")
+            return False
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            return False
 
     def send_appointment_confirmation(
         self,
