@@ -10,15 +10,17 @@ HealthGPT é um sistema modular com backend em Python que centraliza o atendimen
 
 - **Agendamento Inteligente**
 
-  - Validação automática de horários disponíveis
+  - Oferece opção de autoagendamento via link (Google Appointment Schedules).
+  - Permite agendamento conversacional interativo via WhatsApp.
+  - Validação automática de horários disponíveis (para fluxo conversacional).
   - Suporte a agendamentos particulares e por convênio
   - Verificação de convênios aceitos
-  - Solicitação e validação de documentos necessários
 
 - **Documentação Necessária**
 
   - Documento de identificação (obrigatório para todos)
   - Carteirinha do convênio (obrigatório para agendamentos por convênio)
+  - _Nota:_ No fluxo conversacional, o bot solicitará o envio dos documentos pelo chat. A verificação e armazenamento dos arquivos são realizados manualmente pela equipe.
 
 - **Convênios Aceitos**
 
