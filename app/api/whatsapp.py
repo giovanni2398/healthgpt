@@ -2,6 +2,7 @@ import os
 import json
 from fastapi import APIRouter, Request, Response, HTTPException, status, BackgroundTasks
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 
 from app.services.whatsapp_service import WhatsAppService
 from app.services.conversation_state_service import ConversationStateService
@@ -187,12 +188,9 @@ async def process_whatsapp_message(payload: dict):
         
         if orchestrator_service.validate_insurance(potential_insurance_name):
             new_context['insurance_name'] = potential_insurance_name
-            # Ask for documents next
-            reply_message = (
-                f"Perfeito, atendemos {potential_insurance_name}. \n"
-                f"Para agilizar, por favor, envie aqui no chat fotos legíveis do seu documento de identidade (frente e verso) e da sua carteirinha do convênio (frente e verso)."
-            )
-            new_state = "AWAITING_DOCS_INSURANCE"
+            # Ask for Name next
+            reply_message = f"Perfeito, atendemos {potential_insurance_name}. Qual o seu nome completo, por favor?"
+            new_state = "AWAITING_NAME" # Go to collect name
             state_service.save_state(phone_number, new_state, new_context)
         else:
             accepted_list = ", ".join(orchestrator_service.ACCEPTED_INSURANCES)
@@ -206,6 +204,30 @@ async def process_whatsapp_message(payload: dict):
             new_state = "AWAITING_TYPE"
             state_service.save_state(phone_number, new_state, context) # Reset context slightly?
             
+    elif state == "AWAITING_NAME":
+        print(f"Handling AWAITING_NAME for {phone_number}. Message: '{message_text}'")
+        patient_name = message_text.strip()
+        # TODO: Add basic validation for name? (e.g., length, format)
+        new_context['patient_name'] = patient_name
+        reply_message = f"Obrigado, {patient_name.split()[0]}. Agora, por favor, informe sua data de nascimento (DD/MM/AAAA)."
+        new_state = "AWAITING_DOB"
+        state_service.save_state(phone_number, new_state, new_context)
+
+    elif state == "AWAITING_DOB":
+        print(f"Handling AWAITING_DOB for {phone_number}. Message: '{message_text}'")
+        dob_text = message_text.strip()
+        # TODO: Add validation for date format (DD/MM/AAAA)
+        # TODO: Potentially convert to standard date format here?
+        new_context['dob'] = dob_text
+        # Now ask for documents
+        reply_message = (
+             f"Entendido. Para finalizar a verificação do convênio \"{new_context.get('insurance_name', '')}\", "
+             f"por favor, envie aqui no chat fotos legíveis do seu documento de identidade (frente e verso) "
+             f"e da sua carteirinha do convênio (frente e verso)."
+        )
+        new_state = "AWAITING_DOCS_INSURANCE"
+        state_service.save_state(phone_number, new_state, new_context)
+
     elif state == "AWAITING_DOCS_INSURANCE":
         # Move to asking about slots.
         print(f"Handling AWAITING_DOCS_INSURANCE for {phone_number}. Assuming docs received, asking for slots.")
@@ -293,42 +315,87 @@ async def process_whatsapp_message(payload: dict):
             
             if reservation_result.get("success"): # Assuming reserve_slot returns a dict like {"success": True/False, ...}
                 # Slot successfully reserved (logically)
-                # TODO: Get the reserved slot details (like formatted time) for the confirmation message
-                reserved_time = reservation_result.get("formatted_time", "o horário selecionado") # Placeholder
                 
-                reply_message = (
-                    f"Ótimo! Seu horário para {reserved_time} foi pré-agendado com sucesso.\n"
-                    f"Nossa equipe irá verificar os documentos enviados e entrará em contato em breve para confirmar tudo. Obrigado!"
-                )
-                new_state = "APPOINTMENT_PENDING" # Move to a state indicating pending human review/confirmation
-                new_context["reserved_slot_id"] = chosen_slot_id # Store the reserved ID
-                state_service.save_state(phone_number, new_state, new_context)
-            else:
-                # Slot could not be reserved (e.g., already taken, invalid ID)
-                error_message = reservation_result.get("error", "Não foi possível reservar este horário. Pode ser que ele tenha sido ocupado ou o ID é inválido.")
-                reply_message = f"{error_message} Por favor, escolha outro horário da lista abaixo."
+                # --- Attempt to create Google Calendar event --- 
+                print(f"Slot {chosen_slot_id} reserved internally. Attempting GCal event creation.")
+                if scheduling_service is None: scheduling_service = SchedulingService() # Ensure service is available
                 
-                # Re-fetch and display available slots
-                available_slots = scheduling_service.get_available_slots()
-                if not available_slots:
-                    reply_message = "Desculpe, não há mais horários disponíveis no momento. Por favor, entre em contato conosco."
-                    new_state = "HUMAN_TAKEOVER" # No slots left, escalate
+                # 1. Gather necessary info
+                patient_name = new_context.get("patient_name", "Nome não encontrado")
+                dob = new_context.get("dob", "Data Nasc. não encontrada")
+                insurance_name = new_context.get("insurance_name", "Particular")
+                # reservation_result likely contains slot details like start/end times needed by GCal
+                slot_details = reservation_result.get("slot_data", {}) # Assuming reserve_slot returns full slot data
+                start_time = slot_details.get("start_time")
+                end_time = slot_details.get("end_time")
+
+                if not start_time or not end_time:
+                    print(f"ERROR: Missing start/end time from reservation_result for slot {chosen_slot_id}. Cannot create GCal event.")
+                    # Handle error - maybe escalate to human? Free the slot.
+                    reply_message = "Desculpe, ocorreu um erro interno ao processar os detalhes do horário. Nossa equipe entrará em contato."
+                    try: scheduling_service.free_slot(chosen_slot_id) # Placeholder for freeing slot
+                    except AttributeError: print("Placeholder: scheduling_service.free_slot not implemented")
+                    except Exception as free_err: print(f"Error freeing slot {chosen_slot_id}: {free_err}")
+                    new_state = "HUMAN_TAKEOVER"
                     state_service.save_state(phone_number, new_state, context)
                 else:
-                    slot_options = []
-                    for slot in available_slots:
-                        try:
-                            from datetime import datetime
-                            start_dt = datetime.fromisoformat(slot['start_time'])
-                            formatted_time = start_dt.strftime("%d/%m/%Y às %H:%M")
-                            slot_options.append(f"- {formatted_time} (ID: {slot['slot_id']})")
-                        except (ValueError, KeyError):
-                             slot_options.append(f"- Horário inválido (ID: {slot.get('slot_id', 'N/A')})")
-                              
-                    reply_message += "\n\n" + "Aqui estão os horários atualizados:\n" + "\n".join(slot_options) + "\n\nPor favor, digite o ID do horário que deseja escolher."
-                    new_state = "AWAITING_SLOT_CHOICE" # Stay in this state, but show list again
-                    state_service.save_state(phone_number, new_state, context) # Update context if needed
+                    patient_info = {
+                        "name": patient_name,
+                        "dob": dob, # Date of Birth
+                        "phone": phone_number, # User's WhatsApp number
+                        "insurance": insurance_name
+                    }
                     
+                    # 2. Call placeholder function to create event
+                    try:
+                        # TODO: Replace placeholder with actual call to Calendar service
+                        # calendar_service = CalendarService()
+                        # event_created = await calendar_service.create_event(start_time, end_time, patient_info)
+                        print(f"Placeholder: Calling create_calendar_event for {patient_name} at {start_time}")
+                        # Simulate success/failure for now
+                        event_created = True # Assume success for now
+
+                        if event_created:
+                            # 3a. Event created successfully - Send final confirmation
+                            print(f"GCal event created successfully for slot {chosen_slot_id}.")
+                            # Format confirmation message using collected data
+                            from datetime import datetime
+                            try:
+                                dt_obj = datetime.fromisoformat(start_time)
+                                appointment_details_str = dt_obj.strftime("%d/%m/%Y às %H:%M")
+                            except ValueError:
+                                appointment_details_str = "o horário selecionado"
+                                
+                            reply_message = (
+                                f"Agendamento confirmado! ✅\n\n"
+                                f"Olá {patient_name}, seu agendamento para {appointment_details_str} foi confirmado com sucesso. "
+                                f"Aguardamos você!"
+                            )
+                            new_state = "COMPLETED" # Final state
+                            # Keep context or clear it?
+                            state_service.save_state(phone_number, new_state, new_context) 
+                        else:
+                            # 3b. Event creation failed
+                            print(f"GCal event creation FAILED for slot {chosen_slot_id}.")
+                            reply_message = "Consegui reservar seu horário, mas ocorreu um problema ao registrar o agendamento na nossa agenda. Nossa equipe revisará e entrará em contato para confirmar, ok?"
+                            # Free the slot that was reserved internally
+                            try: scheduling_service.free_slot(chosen_slot_id) # Placeholder for freeing slot
+                            except AttributeError: print("Placeholder: scheduling_service.free_slot not implemented")
+                            except Exception as free_err: print(f"Error freeing slot {chosen_slot_id}: {free_err}")
+                            new_state = "HUMAN_TAKEOVER"
+                            state_service.save_state(phone_number, new_state, context) # Keep context for human
+
+                    except Exception as cal_err:
+                        # Handle exceptions during the calendar creation attempt
+                        print(f"ERROR during calendar event creation attempt for slot {chosen_slot_id}: {cal_err}")
+                        reply_message = "Desculpe, ocorreu um erro inesperado ao tentar confirmar seu agendamento na agenda. Nossa equipe entrará em contato."
+                        # Free the slot
+                        try: scheduling_service.free_slot(chosen_slot_id) # Placeholder
+                        except AttributeError: print("Placeholder: scheduling_service.free_slot not implemented")
+                        except Exception as free_err: print(f"Error freeing slot {chosen_slot_id}: {free_err}")
+                        new_state = "HUMAN_TAKEOVER"
+                        state_service.save_state(phone_number, new_state, context)
+
         except Exception as e:
             print(f"Error reserving slot {chosen_slot_id}: {e}")
             reply_message = "Ocorreu um erro ao tentar reservar seu horário. Por favor, tente novamente ou escolha outro horário da lista."
@@ -394,3 +461,40 @@ async def receive_whatsapp_message(request: Request, background_tasks: Backgroun
     background_tasks.add_task(process_whatsapp_message, payload)
     print("Received POST /webhook. Added to background tasks.")
     return Response(status_code=status.HTTP_200_OK)
+
+# --- Send Confirmation Message Endpoint --- 
+
+class ConfirmationPayload(BaseModel):
+   phone_number: str = Field(..., description="Patient's phone number with country code")
+   patient_name: str = Field(..., description="Patient's full name")
+   appointment_details: str = Field(..., description="Confirmed appointment date and time (e.g., '15 de agosto de 2024 às 10:30')")
+
+@router.post("/send-confirmation")
+async def send_confirmation_message(payload: ConfirmationPayload):
+   """
+   Endpoint to trigger sending a confirmation message after successful booking.
+   This should be called by the backend/admin system after verification.
+   """
+   print(f"Received request to send confirmation to {payload.phone_number}")
+   whatsapp_service = WhatsAppService()
+
+   # Format the confirmation message
+   # TODO: Consider making this message template configurable
+   confirmation_message = (
+       f"Olá {payload.patient_name}, seu agendamento para {payload.appointment_details} foi confirmado com sucesso! "
+       f"Aguardamos você."
+   )
+
+   try:
+       await whatsapp_service.send_message(payload.phone_number, confirmation_message)
+       print(f"Confirmation message sent successfully to {payload.phone_number}.")
+       # Optionally, update the conversation state here if desired
+       # state_service = ConversationStateService()
+       # state_service.save_state(payload.phone_number, "COMPLETED", {}) 
+       return {"status": "success", "message": "Confirmation sent."}
+   except Exception as e:
+       print(f"Error sending confirmation message to {payload.phone_number}: {e}")
+       raise HTTPException(
+           status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+           detail=f"Failed to send confirmation message: {str(e)}",
+       )
