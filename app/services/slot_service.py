@@ -25,6 +25,66 @@ class SlotService:
         }
         return slot_id
     
+    def generate_slots(self, 
+                       start_date: datetime, 
+                       end_date: datetime, 
+                       slot_duration: timedelta,
+                       daily_start_time: timedelta = timedelta(hours=9),
+                       daily_end_time: timedelta = timedelta(hours=17),
+                       excluded_days: List[int] = None) -> List[str]:
+        """
+        Generates multiple slots between start_date and end_date with specified duration.
+        
+        Args:
+            start_date: The starting date for slot generation
+            end_date: The ending date for slot generation
+            slot_duration: Duration of each slot
+            daily_start_time: Time to start slots each day (default: 9:00 AM)
+            daily_end_time: Time to end slots each day (default: 5:00 PM)
+            excluded_days: List of days to exclude (0=Monday, 6=Sunday, default: weekends [5,6])
+            
+        Returns:
+            List of generated slot IDs
+        """
+        if excluded_days is None:
+            excluded_days = [5, 6]  # Saturday and Sunday by default
+            
+        if start_date >= end_date:
+            raise ValueError("Start date must be before end date")
+            
+        if daily_start_time >= daily_end_time:
+            raise ValueError("Daily start time must be before daily end time")
+            
+        if slot_duration <= timedelta(0):
+            raise ValueError("Slot duration must be positive")
+            
+        generated_slot_ids = []
+        current_date = start_date.replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        
+        while current_date <= end_date:
+            # Skip excluded days
+            if current_date.weekday() in excluded_days:
+                current_date += timedelta(days=1)
+                continue
+                
+            # Calculate the actual start and end times for this day
+            day_start = current_date + daily_start_time
+            day_end = current_date + daily_end_time
+            
+            # Generate slots for this day
+            slot_start = day_start
+            while slot_start + slot_duration <= day_end:
+                slot_end = slot_start + slot_duration
+                slot_id = self.create_slot(slot_start, slot_end)
+                generated_slot_ids.append(slot_id)
+                slot_start = slot_end
+                
+            current_date += timedelta(days=1)
+            
+        return generated_slot_ids
+    
     def get_slot(self, slot_id: str) -> Optional[Dict]:
         """Gets a slot by its ID."""
         return self.slots.get(slot_id)

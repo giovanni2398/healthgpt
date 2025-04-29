@@ -3,12 +3,13 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 
-from app.api import whatsapp, calendar, notifications, conversation
+from app.api import whatsapp, calendar, notifications, conversation, slots
 
 load_dotenv()
 
 from app.api.whatsapp import router as whatsapp_router
 from app.api.conversation import router as conversation_router
+from app.api.slots import router as slots_router
 
 app = FastAPI(title="HealthGPT")
 
@@ -21,6 +22,7 @@ app.include_router(calendar.router, prefix="/calendar")
 app.include_router(conversation_router, prefix="/conversation")
 app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
 app.include_router(conversation.router, prefix="/api/conversation", tags=["conversation"])
+app.include_router(slots_router, tags=["slots"])  # Endpoint já possui o prefixo /slots
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
