@@ -192,7 +192,7 @@ HealthGPT/
 
 ---
 
-## �� Fases do Projeto
+## 🎯 Fases do Projeto
 
 - **Fase 1 – Integração com Google Calendar** ✅
 
@@ -268,6 +268,79 @@ Atualmente, o backend opera de forma **síncrona**. Isso significa que operaçõ
   - **Benefícios:** Maior performance e escalabilidade, especialmente sob carga. O sistema poderá lidar com múltiplas requisições simultâneas de forma mais eficiente, sem que uma requisição lenta bloqueie as outras.
   - **Tecnologias:** Utilizar bibliotecas como `asyncio`, `httpx` (para chamadas HTTP assíncronas) e frameworks compatíveis como FastAPI.
   - **Status:** Planejado para desenvolvimento posterior.
+
+---
+
+## ⏰ Configuração de Horários da Clínica
+
+O sistema permite a configuração personalizada dos horários de atendimento da clínica através do arquivo de configuração JSON localizado em `app/config/clinic_schedule.json`. Esta configuração define os dias e horários de funcionamento e é usada pelo serviço de agendamento para gerar os slots disponíveis.
+
+### Formato do Arquivo de Configuração
+
+```json
+{
+  "slot_duration_minutes": 45,
+  "schedules": [
+    {
+      "days": [1, 3, 5],
+      "description": "Terça, Quinta e Sábado - Manhã",
+      "start_time": "08:30",
+      "end_time": "12:15"
+    },
+    {
+      "days": [0, 2, 4],
+      "description": "Segunda, Quarta e Sexta - Tarde",
+      "start_time": "14:00",
+      "end_time": "17:45"
+    }
+  ]
+}
+```
+
+### Parâmetros de Configuração
+
+- `slot_duration_minutes`: Duração de cada slot de atendimento em minutos
+- `schedules`: Lista de configurações de horários
+  - `days`: Lista de dias da semana (0 = Segunda, 1 = Terça, ..., 6 = Domingo)
+  - `description`: Descrição textual do horário (apenas para referência)
+  - `start_time`: Horário de início no formato "HH:MM"
+  - `end_time`: Horário de término no formato "HH:MM"
+
+### Personalização para Diferentes Clínicas
+
+Para adaptar o sistema para diferentes clínicas em um ambiente de produção:
+
+1. Edite o arquivo `app/config/clinic_schedule.json` com os horários específicos da clínica
+2. Se o arquivo não existir, o sistema criará automaticamente um arquivo com configurações padrão
+3. Reinicie a aplicação para que as alterações tenham efeito
+
+### Exemplo para Clínica com Atendimento Noturno
+
+```json
+{
+  "slot_duration_minutes": 60,
+  "schedules": [
+    {
+      "days": [0, 1, 2, 3, 4],
+      "description": "Segunda a Sexta - Manhã e Tarde",
+      "start_time": "09:00",
+      "end_time": "17:00"
+    },
+    {
+      "days": [1, 3],
+      "description": "Terça e Quinta - Noite",
+      "start_time": "18:00",
+      "end_time": "21:00"
+    },
+    {
+      "days": [5],
+      "description": "Sábado - Manhã",
+      "start_time": "08:00",
+      "end_time": "12:00"
+    }
+  ]
+}
+```
 
 ---
 
