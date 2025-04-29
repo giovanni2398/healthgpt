@@ -482,7 +482,7 @@ async def test_post_webhook_awaiting_slot_preference_slots_available(
     mock_state_service.get_state.return_value = {"state": "AWAITING_SLOT_PREFERENCE", "context": initial_context}
     mock_scheduling_service.get_available_slots.return_value = available_slots_all
     mock_chatgpt_service.filter_slots_by_preference.return_value = filtered_slots_expected
-    
+
     response = client.post("/whatsapp_test/webhook", json=payload)
     
     assert response.status_code == status.HTTP_200_OK
