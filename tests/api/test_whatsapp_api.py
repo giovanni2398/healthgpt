@@ -12,6 +12,7 @@ from app.services.conversation_state_service import ConversationStateService
 from app.services.whatsapp_service import WhatsAppService
 from app.services.scheduling_service import SchedulingService
 from app.services.appointment_orchestrator import AppointmentOrchestrator
+from app.services.chatgpt_service import ChatGPTService
 
 # Include the WhatsApp router in the TestClient app instance
 app.include_router(whatsapp_router, prefix="/whatsapp_test") # Use a prefix to avoid conflicts if needed
@@ -62,6 +63,14 @@ def mock_orchestrator_service():
         instance.ACCEPTED_INSURANCES = ["GoodHealth", "SecurePlan"] # Example accepted
         yield instance
         
+@pytest.fixture
+def mock_chatgpt_service():
+    """ Mocks ChatGPTService. """
+    with patch('app.api.whatsapp.ChatGPTService', autospec=True) as mock:
+        instance = mock.return_value
+        instance.filter_slots_by_preference = MagicMock() # No default side_effect or return_value
+        yield instance
+
 @pytest.fixture
 def mock_background_tasks():
     """ Mocks BackgroundTasks to run tasks immediately. """
@@ -447,38 +456,51 @@ async def test_post_webhook_awaiting_docs_insurance(
 async def test_post_webhook_awaiting_slot_preference_slots_available(
     mock_state_service,
     mock_whatsapp_service,
-    mock_scheduling_service, # Need scheduling service
+    mock_scheduling_service,
+    mock_chatgpt_service,
     mock_background_tasks
 ):
-    """ Test asking for slots in AWAITING_SLOT_PREFERENCE with available slots. """
+    """ Test asking for slots in AWAITING_SLOT_PREFERENCE with successful filtering. """
     phone_number = "1234567898"
     message_text = "qualquer horário serve"
     initial_context = {"is_private": False, "insurance_name": "GoodHealth"}
     payload = create_whatsapp_payload(phone_number, message_text)
     
     # Define available slots
-    available_slots = [
+    available_slots_all = [
         {"slot_id": "slot1", "start_time": "2024-08-01T10:00:00", "end_time": "2024-08-01T10:30:00"},
-        {"slot_id": "slot2", "start_time": "2024-08-01T11:00:00", "end_time": "2024-08-01T11:30:00"}
+        {"slot_id": "slot2", "start_time": "2024-08-01T11:00:00", "end_time": "2024-08-01T11:30:00"},
+        {"slot_id": "slot3", "start_time": "2024-08-02T09:00:00", "end_time": "2024-08-02T09:30:00"}
+    ]
+    
+    # Define the slots ChatGPT should return (simulating filtering for "August 2nd morning")
+    filtered_slots_expected = [
+        {"slot_id": "slot3", "start_time": "2024-08-02T09:00:00", "end_time": "2024-08-02T09:30:00"}
     ]
     
     # Set initial state and mock service results
     mock_state_service.get_state.return_value = {"state": "AWAITING_SLOT_PREFERENCE", "context": initial_context}
-    mock_scheduling_service.get_available_slots.return_value = available_slots
-    
+    mock_scheduling_service.get_available_slots.return_value = available_slots_all
+    mock_chatgpt_service.filter_slots_by_preference.return_value = filtered_slots_expected
+
     response = client.post("/whatsapp_test/webhook", json=payload)
     
     assert response.status_code == status.HTTP_200_OK
     mock_state_service.get_state.assert_called_once_with(phone_number)
     mock_scheduling_service.get_available_slots.assert_called_once()
+    mock_chatgpt_service.filter_slots_by_preference.assert_called_once_with(
+        user_message=message_text,
+        available_slots=available_slots_all
+    )
     
-    # Check the slot list message was sent
+    # Check the FILTERED slot list message was sent
     mock_whatsapp_service.send_message.assert_called_once()
     call_args = mock_whatsapp_service.send_message.call_args[0]
     assert call_args[0] == phone_number
-    assert "Aqui estão os próximos horários disponíveis:" in call_args[1]
-    assert "01/08/2024 às 10:00 (ID: slot1)" in call_args[1] # Check formatting
-    assert "01/08/2024 às 11:00 (ID: slot2)" in call_args[1]
+    assert "Encontrei estes horários que correspondem à sua preferência:" in call_args[1]
+    assert "02/08/2024 às 09:00 (ID: slot3)" in call_args[1]
+    assert "slot1" not in call_args[1]
+    assert "slot2" not in call_args[1]
     assert "digite o ID do horário que deseja escolher" in call_args[1]
     
     # Check the state transition
@@ -660,6 +682,191 @@ async def test_post_webhook_awaiting_slot_choice_fail_no_slots(
     mock_state_service.save_state.assert_called_once_with(
         phone_number, 
         "HUMAN_TAKEOVER", # Escalate to human
+        initial_context 
+    )
+
+@pytest.mark.asyncio
+async def test_post_webhook_awaiting_slot_preference_filter_no_match(
+    mock_state_service,
+    mock_whatsapp_service,
+    mock_scheduling_service,
+    mock_chatgpt_service, # Add chatgpt mock
+    mock_background_tasks
+):
+    """ Test slot preference filtering resulting in no matching slots. """
+    phone_number = "1234567910"
+    message_text = "preciso de um horário hoje à noite"
+    initial_context = {"is_private": False, "insurance_name": "GoodHealth"}
+    payload = create_whatsapp_payload(phone_number, message_text)
+    
+    # Define available slots (none match the preference)
+    available_slots_all = [
+        {"slot_id": "slot_morn", "start_time": "2024-08-01T10:00:00", "end_time": "2024-08-01T10:30:00"},
+        {"slot_id": "slot_aft", "start_time": "2024-08-01T14:00:00", "end_time": "2024-08-01T14:30:00"}
+    ]
+    
+    # Set initial state and mock service results
+    mock_state_service.get_state.return_value = {"state": "AWAITING_SLOT_PREFERENCE", "context": initial_context}
+    mock_scheduling_service.get_available_slots.return_value = available_slots_all
+    mock_chatgpt_service.filter_slots_by_preference.return_value = [] # Mock filter result: no matches
+    
+    response = client.post("/whatsapp_test/webhook", json=payload)
+    
+    assert response.status_code == status.HTTP_200_OK
+    mock_state_service.get_state.assert_called_once_with(phone_number)
+    mock_scheduling_service.get_available_slots.assert_called_once()
+    mock_chatgpt_service.filter_slots_by_preference.assert_called_once_with(
+        user_message=message_text,
+        available_slots=available_slots_all
+    )
+    
+    # Check the "no match, show all?" message was sent
+    mock_whatsapp_service.send_message.assert_called_once()
+    call_args = mock_whatsapp_service.send_message.call_args[0]
+    assert call_args[0] == phone_number
+    assert "não encontrei horários disponíveis que correspondam à sua preferência" in call_args[1]
+    assert "Gostaria de ver todos os horários disponíveis?" in call_args[1]
+    
+    # Check the state transition to AWAITING_SLOT_PREFERENCE_ALL
+    mock_state_service.save_state.assert_called_once_with(
+        phone_number, 
+        "AWAITING_SLOT_PREFERENCE_ALL", 
+        initial_context # Context should be preserved
+    )
+
+@pytest.mark.asyncio
+async def test_post_webhook_awaiting_slot_preference_filter_error(
+    mock_state_service,
+    mock_whatsapp_service,
+    mock_scheduling_service,
+    mock_chatgpt_service, # Add chatgpt mock
+    mock_background_tasks
+):
+    """ Test error during ChatGPT slot filtering, falling back to all slots. """
+    phone_number = "1234567911"
+    message_text = "talvez amanhã?"
+    initial_context = {"is_private": False, "insurance_name": "GoodHealth"}
+    payload = create_whatsapp_payload(phone_number, message_text)
+    
+    # Define available slots 
+    available_slots_all = [
+        {"slot_id": "slotA", "start_time": "2024-08-01T10:00:00", "end_time": "2024-08-01T10:30:00"},
+        {"slot_id": "slotB", "start_time": "2024-08-01T14:00:00", "end_time": "2024-08-01T14:30:00"}
+    ]
+    
+    # Set initial state and mock service results
+    mock_state_service.get_state.return_value = {"state": "AWAITING_SLOT_PREFERENCE", "context": initial_context}
+    mock_scheduling_service.get_available_slots.return_value = available_slots_all
+    # Mock ChatGPT filtering to raise an error
+    mock_chatgpt_service.filter_slots_by_preference.side_effect = Exception("ChatGPT API Error") 
+    
+    response = client.post("/whatsapp_test/webhook", json=payload)
+    
+    assert response.status_code == status.HTTP_200_OK
+    mock_state_service.get_state.assert_called_once_with(phone_number)
+    mock_scheduling_service.get_available_slots.assert_called_once()
+    mock_chatgpt_service.filter_slots_by_preference.assert_called_once_with(
+        user_message=message_text,
+        available_slots=available_slots_all
+    )
+    
+    # Check the message shows ALL slots (fallback)
+    mock_whatsapp_service.send_message.assert_called_once()
+    call_args = mock_whatsapp_service.send_message.call_args[0]
+    assert call_args[0] == phone_number
+    # The message should be the one showing the slots, not an error message to the user
+    assert "Encontrei estes horários que correspondem à sua preferência:" in call_args[1] # Wording might be slightly off in fallback
+    assert "01/08/2024 às 10:00 (ID: slotA)" in call_args[1]
+    assert "01/08/2024 às 14:00 (ID: slotB)" in call_args[1]
+    assert "digite o ID do horário que deseja escolher" in call_args[1]
+    
+    # Check the state transition to AWAITING_SLOT_CHOICE (as it fell back to showing all)
+    mock_state_service.save_state.assert_called_once_with(
+        phone_number, 
+        "AWAITING_SLOT_CHOICE", 
+        initial_context 
+    )
+
+@pytest.mark.asyncio
+async def test_post_webhook_awaiting_slot_preference_all(
+    mock_state_service,
+    mock_whatsapp_service,
+    mock_scheduling_service,
+    mock_background_tasks
+):
+    """ Test user responding in AWAITING_SLOT_PREFERENCE_ALL state (wants to see all). """
+    phone_number = "1234567912"
+    message_text = "sim, pode mostrar todos"
+    initial_context = {"is_private": False, "insurance_name": "GoodHealth"} # Context from previous state
+    payload = create_whatsapp_payload(phone_number, message_text)
+    
+    # Define available slots 
+    available_slots_all = [
+        {"slot_id": "slotX", "start_time": "2024-08-03T10:00:00", "end_time": "2024-08-03T10:30:00"},
+        {"slot_id": "slotY", "start_time": "2024-08-03T11:00:00", "end_time": "2024-08-03T11:30:00"}
+    ]
+    
+    # Set initial state and mock service results
+    mock_state_service.get_state.return_value = {"state": "AWAITING_SLOT_PREFERENCE_ALL", "context": initial_context}
+    mock_scheduling_service.get_available_slots.return_value = available_slots_all
+    
+    response = client.post("/whatsapp_test/webhook", json=payload)
+    
+    assert response.status_code == status.HTTP_200_OK
+    mock_state_service.get_state.assert_called_once_with(phone_number)
+    mock_scheduling_service.get_available_slots.assert_called_once()
+    # ChatGPT service should NOT be called in this state
+    
+    # Check the message shows ALL available slots
+    mock_whatsapp_service.send_message.assert_called_once()
+    call_args = mock_whatsapp_service.send_message.call_args[0]
+    assert call_args[0] == phone_number
+    assert "Ok, aqui estão todos os horários disponíveis:" in call_args[1]
+    assert "03/08/2024 às 10:00 (ID: slotX)" in call_args[1]
+    assert "03/08/2024 às 11:00 (ID: slotY)" in call_args[1]
+    assert "digite o ID do horário que deseja escolher" in call_args[1]
+    
+    # Check the state transition to AWAITING_SLOT_CHOICE
+    mock_state_service.save_state.assert_called_once_with(
+        phone_number, 
+        "AWAITING_SLOT_CHOICE", 
+        initial_context 
+    )
+
+@pytest.mark.asyncio
+async def test_post_webhook_awaiting_slot_preference_all_no_slots(
+    mock_state_service,
+    mock_whatsapp_service,
+    mock_scheduling_service,
+    mock_background_tasks
+):
+    """ Test AWAITING_SLOT_PREFERENCE_ALL state when no slots are available even when checking all. """
+    phone_number = "1234567913"
+    message_text = "ok"
+    initial_context = {"is_private": False, "insurance_name": "GoodHealth"}
+    payload = create_whatsapp_payload(phone_number, message_text)
+    
+    # Set initial state and mock service results
+    mock_state_service.get_state.return_value = {"state": "AWAITING_SLOT_PREFERENCE_ALL", "context": initial_context}
+    mock_scheduling_service.get_available_slots.return_value = [] # No slots available
+    
+    response = client.post("/whatsapp_test/webhook", json=payload)
+    
+    assert response.status_code == status.HTTP_200_OK
+    mock_state_service.get_state.assert_called_once_with(phone_number)
+    mock_scheduling_service.get_available_slots.assert_called_once()
+    
+    # Check the final "no slots" message was sent
+    mock_whatsapp_service.send_message.assert_called_once()
+    call_args = mock_whatsapp_service.send_message.call_args[0]
+    assert call_args[0] == phone_number
+    assert "Desculpe, verifiquei novamente e realmente não há horários disponíveis" in call_args[1]
+    assert "Por favor, entre em contato conosco" in call_args[1]
+    
+    # Check the state transition to HUMAN_TAKEOVER
+    mock_state_service.save_state.assert_called_once_with(
+        phone_number, 
+        "HUMAN_TAKEOVER", 
         initial_context 
     )
 
