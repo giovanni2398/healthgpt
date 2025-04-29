@@ -34,7 +34,7 @@ app.include_router(conversation_router, prefix="/conversation")
 app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
 app.include_router(conversation.router, prefix="/api/conversation", tags=["conversation"])
 app.include_router(slots_router, tags=["slots"])  # Endpoint já possui o prefixo /slots
-app.include_router(simplified_slots_router, tags=["simplified-slots"])  # Router já possui o prefixo /api/simplified-slots
+app.include_router(simplified_slots_router, prefix="/api/simplified-slots", tags=["simplified-slots"])
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):

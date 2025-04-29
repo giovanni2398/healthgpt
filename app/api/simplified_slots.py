@@ -17,7 +17,6 @@ def get_service():
     return _service
 
 router = APIRouter(
-    prefix="/api/simplified-slots",
     tags=["simplified-slots"],
     responses={404: {"description": "Not found"}},
 )
