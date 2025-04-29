@@ -16,7 +16,7 @@ def get_service():
         _service = SimplifiedSlotService()
     return _service
 
-simplified_slots_router = APIRouter(
+router = APIRouter(
     prefix="/api/simplified-slots",
     tags=["simplified-slots"],
     responses={404: {"description": "Not found"}},
@@ -71,7 +71,7 @@ def get_slot_service():
     """Dependency to provide the slot service instance."""
     return SimplifiedSlotService()
 
-@simplified_slots_router.get("/available", response_model=List[Slot])
+@router.get("/available", response_model=List[Slot])
 async def get_available_slots(
     start_date: str = Query(..., description="Start date in ISO format (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date in ISO format (YYYY-MM-DD)"),
@@ -105,7 +105,7 @@ async def get_available_slots(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
 
-@simplified_slots_router.post("/book", response_model=ApiResponse)
+@router.post("/book", response_model=ApiResponse)
 async def book_slot(
     appointment: AppointmentInfo,
     start_time: str = Query(..., description="Start time in ISO format"),
@@ -140,7 +140,7 @@ async def book_slot(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid datetime format: {str(e)}")
 
-@simplified_slots_router.post("/cancel", response_model=ApiResponse)
+@router.post("/cancel", response_model=ApiResponse)
 async def cancel_appointment(
     start_time: str = Query(..., description="Start time in ISO format"),
     slot_service: SimplifiedSlotService = Depends(get_slot_service)
@@ -174,7 +174,7 @@ async def cancel_appointment(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid datetime format: {str(e)}")
 
-@simplified_slots_router.get("/appointments", response_model=List[AppointmentResponse])
+@router.get("/appointments", response_model=List[AppointmentResponse])
 async def get_all_appointments(
     slot_service: SimplifiedSlotService = Depends(get_slot_service)
 ):
@@ -197,7 +197,7 @@ async def get_all_appointments(
     
     return formatted_appointments
 
-@simplified_slots_router.get("/appointment", response_model=Optional[AppointmentResponse])
+@router.get("/appointment", response_model=Optional[AppointmentResponse])
 async def get_appointment(
     start_time: str = Query(..., description="Start time in ISO format"),
     slot_service: SimplifiedSlotService = Depends(get_slot_service)
@@ -225,7 +225,7 @@ async def get_appointment(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid datetime format: {str(e)}")
 
-@simplified_slots_router.get("/config", response_model=ScheduleConfig)
+@router.get("/config", response_model=ScheduleConfig)
 async def get_schedule_config():
     """
     Retorna a configuração atual dos horários da clínica.
@@ -233,7 +233,7 @@ async def get_schedule_config():
     service = get_service()
     return service.config
 
-@simplified_slots_router.put("/config", response_model=ScheduleConfig)
+@router.put("/config", response_model=ScheduleConfig)
 async def update_schedule_config(config: ScheduleConfig):
     """
     Atualiza a configuração dos horários da clínica.
