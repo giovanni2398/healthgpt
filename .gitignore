@@ -1,12 +1,32 @@
-# Ignorar o ambiente virtual
+# Virtual Environment
 .venv/
 
-# Ignorar caches do Python
+# Python cache
 __pycache__/
-*.pyc
+*.py[cod]
 
-# Ignorar arquivos de configuração local
+# Configuration/Secrets
 *.env
+app/secrets/
+credentials.json # Keep specific credential files if stored outside app/secrets
+token.json       # Keep specific token files if stored outside app/secrets
+*.pem
+*.key
 
-# Ignorar arquivos de credenciais
-credentials.json
+# IDE/Editor files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build/dist artifacts
+build/
+dist/
+*.egg-info/
+
+# Test artifacts
+.pytest_cache/
+.coverage*
+htmlcov/

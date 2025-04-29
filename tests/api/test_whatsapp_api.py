@@ -13,6 +13,7 @@ from app.services.whatsapp_service import WhatsAppService
 from app.services.scheduling_service import SchedulingService
 from app.services.appointment_orchestrator import AppointmentOrchestrator
 from app.services.chatgpt_service import ChatGPTService
+from app.services.calendar_service import CalendarService
 
 # Include the WhatsApp router in the TestClient app instance
 app.include_router(whatsapp_router, prefix="/whatsapp_test") # Use a prefix to avoid conflicts if needed
@@ -69,6 +70,15 @@ def mock_chatgpt_service():
     with patch('app.api.whatsapp.ChatGPTService', autospec=True) as mock:
         instance = mock.return_value
         instance.filter_slots_by_preference = MagicMock() # No default side_effect or return_value
+        yield instance
+
+@pytest.fixture
+def mock_calendar_service():
+    """ Mocks CalendarService. """
+    with patch('app.api.whatsapp.CalendarService', autospec=True) as mock:
+        instance = mock.return_value
+        # Default mock behavior for create_calendar_event
+        instance.create_calendar_event = AsyncMock(return_value=True) # Assume success by default
         yield instance
 
 @pytest.fixture
@@ -362,20 +372,18 @@ async def test_post_webhook_awaiting_insurance_name_valid(
     mock_state_service.get_state.assert_called_once_with(phone_number)
     mock_orchestrator_service.validate_insurance.assert_called_once_with(insurance_name)
     
-    # Check the document request message was sent
+    # Check the name prompt message was sent
     mock_whatsapp_service.send_message.assert_called_once()
     call_args = mock_whatsapp_service.send_message.call_args[0]
     assert call_args[0] == phone_number
     assert f"Perfeito, atendemos {insurance_name}" in call_args[1]
-    assert "envie aqui no chat fotos legíveis" in call_args[1]
-    assert "documento de identidade" in call_args[1]
-    assert "carteirinha do convênio" in call_args[1]
+    assert "Qual o seu nome completo, por favor?" in call_args[1]
     
-    # Check the state transition
+    # Check the state transition to AWAITING_NAME
     expected_context = {"is_private": False, "insurance_name": insurance_name}
     mock_state_service.save_state.assert_called_once_with(
         phone_number, 
-        "AWAITING_DOCS_INSURANCE", 
+        "AWAITING_NAME", 
         expected_context
     )
 
@@ -550,10 +558,11 @@ async def test_post_webhook_awaiting_slot_preference_no_slots(
 async def test_post_webhook_awaiting_slot_choice_success(
     mock_state_service,
     mock_whatsapp_service,
-    mock_scheduling_service, # Need scheduling service
+    mock_scheduling_service,
+    mock_calendar_service,
     mock_background_tasks
 ):
-    """ Test successfully reserving a slot in AWAITING_SLOT_CHOICE state. """
+    """ Test successfully reserving a slot and creating GCal event. """
     phone_number = "1234567900"
     chosen_slot_id = "slot1"
     initial_context = {"is_private": False, "insurance_name": "GoodHealth"}
@@ -561,7 +570,15 @@ async def test_post_webhook_awaiting_slot_choice_success(
     
     # Mock successful reservation
     # Assuming reserve_slot returns formatted time on success
-    reservation_result = {"success": True, "formatted_time": "01/08/2024 às 10:00"}
+    reservation_result = {
+        "success": True, 
+        "slot_data": { # Add slot details needed for GCal event
+            "slot_id": chosen_slot_id, 
+            "start_time": "2024-08-01T10:00:00-03:00", # Example ISO with offset
+            "end_time": "2024-08-01T10:45:00-03:00"
+        }
+        # "formatted_time" is no longer assumed here, it's derived later
+    }
     
     # Set initial state and mock service results
     mock_state_service.get_state.return_value = {"state": "AWAITING_SLOT_CHOICE", "context": initial_context}
@@ -577,17 +594,20 @@ async def test_post_webhook_awaiting_slot_choice_success(
     mock_whatsapp_service.send_message.assert_called_once()
     call_args = mock_whatsapp_service.send_message.call_args[0]
     assert call_args[0] == phone_number
-    assert "Ótimo! Seu horário para 01/08/2024 às 10:00 foi pré-agendado" in call_args[1]
-    assert "Nossa equipe irá verificar os documentos" in call_args[1]
+    assert "Agendamento confirmado!" in call_args[1]
+    assert "Nossa equipe irá verificar os documentos" not in call_args[1]
+    assert "seu agendamento para 01/08/2024 às 10:00 foi confirmado com sucesso" in call_args[1]
+    assert "Aguardamos você!" in call_args[1]
     
-    # Check the state transition to APPOINTMENT_PENDING
+    # Check the state transition to COMPLETED
     expected_context = initial_context.copy()
     expected_context["reserved_slot_id"] = chosen_slot_id
     mock_state_service.save_state.assert_called_once_with(
         phone_number, 
-        "APPOINTMENT_PENDING", 
+        "COMPLETED", 
         expected_context 
     )
+    mock_calendar_service.create_calendar_event.assert_called_once()
 
 @pytest.mark.asyncio
 async def test_post_webhook_awaiting_slot_choice_fail_retry(

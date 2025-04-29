@@ -1,27 +1,154 @@
 import os
-from google.oauth2.service_account import Credentials
+import datetime
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 
 # Carrega as variáveis de ambiente do arquivo .env
 load_dotenv()
 
-# Escopo necessário para usar a API do Google Calendar
-SCOPES = ['https://www.googleapis.com/auth/calendar']
+# Define the SCOPES. If modifying these scopes, delete the token.json file.
+SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 
-# Caminho para o arquivo de credenciais baixado do Google Cloud (formato JSON)
-SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "credentials.json")
+# Define paths relative to the app directory
+# Assumes the script is run from the project root
+SECRETS_DIR = os.path.join('app', 'secrets')
+CREDENTIALS_PATH = os.path.join(SECRETS_DIR, 'credentials.json')
+TOKEN_PATH = os.path.join(SECRETS_DIR, 'token.json')
 
-# ID do calendário onde os eventos serão criados
-CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID")
+class CalendarService:
+    def __init__(self):
+        self.service = self._authenticate()
+
+    def _authenticate(self):
+        """Handles the OAuth 2.0 authentication flow for Google Calendar API."""
+        creds = None
+        # The file token.json stores the user's access and refresh tokens, and is
+        # created automatically when the authorization flow completes for the first
+        # time.
+        if os.path.exists(TOKEN_PATH):
+            try:
+                creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+            except Exception as e:
+                print(f"Error loading token file: {e}. Need to re-authenticate.")
+                creds = None
+        
+        # If there are no (valid) credentials available, let the user log in.
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    print("Credentials expired, refreshing...")
+                    creds.refresh(Request())
+                except Exception as e:
+                    print(f"Error refreshing credentials: {e}. Need to re-authenticate.")
+                    creds = None # Force re-authentication
+            else:
+                # Only run the flow if credentials file exists
+                if not os.path.exists(CREDENTIALS_PATH):
+                    raise FileNotFoundError(f"Credentials file not found at {CREDENTIALS_PATH}. Please obtain it from Google Cloud Console.")
+                
+                print(f"Credentials not found or invalid. Starting auth flow using {CREDENTIALS_PATH}...")
+                try:
+                    # Use InstalledAppFlow for initial authorization
+                    flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
+                    # The port 0 allows it to find an available port dynamically
+                    # You might need to adjust launch_browser=False depending on environment
+                    creds = flow.run_local_server(port=0, launch_browser=True)
+                    print("Authentication successful!")
+                except Exception as e:
+                    print(f"Error during authentication flow: {e}")
+                    raise RuntimeError("Failed to complete Google authentication flow.") from e
+            
+            # Save the credentials for the next run
+            try:
+                os.makedirs(SECRETS_DIR, exist_ok=True) # Ensure secrets directory exists
+                with open(TOKEN_PATH, 'w') as token:
+                    token.write(creds.to_json())
+                print(f"Credentials saved to {TOKEN_PATH}")
+            except Exception as e:
+                 print(f"Error saving token file: {e}")
+                 # Proceed without saving if saving fails, but warn user
+
+        try:
+            service = build('calendar', 'v3', credentials=creds)
+            print("Google Calendar service built successfully.")
+            return service
+        except HttpError as error:
+            print(f'An error occurred building the Calendar service: {error}')
+            raise RuntimeError("Failed to build Google Calendar service.") from error
+        except Exception as e:
+             print(f'An unexpected error occurred building the Calendar service: {e}')
+             raise RuntimeError("Failed to build Google Calendar service.") from e
+
+    async def create_calendar_event(self, start_time_iso: str, end_time_iso: str, patient_info: dict) -> bool:
+        """
+        Creates an event on the user's primary Google Calendar.
+
+        Args:
+            start_time_iso (str): Start time in ISO 8601 format (e.g., '2024-08-15T10:00:00-03:00').
+            end_time_iso (str): End time in ISO 8601 format (e.g., '2024-08-15T10:45:00-03:00').
+            patient_info (dict): Dictionary containing patient details 
+                                 (e.g., {'name': '...', 'dob': '...', 'phone': '...', 'insurance': '...'}).
+
+        Returns:
+            bool: True if the event was created successfully, False otherwise.
+        """
+        if not self.service:
+             print("ERROR: Google Calendar service not initialized.")
+             return False
+
+        # TODO: Construct the event body according to Google Calendar API v3 format
+        # Example structure:
+        event = {
+            'summary': f'Consulta - {patient_info.get("name", "Paciente")}',
+            'description': (
+                f'Paciente: {patient_info.get("name")}\n'
+                f'Data Nasc: {patient_info.get("dob")}\n'
+                f'Telefone: {patient_info.get("phone")}\n'
+                f'Convênio: {patient_info.get("insurance")}'
+            ),
+            'start': {
+                'dateTime': start_time_iso,
+                # 'timeZone': 'America/Sao_Paulo', # Timezone should ideally be in the ISO string
+            },
+            'end': {
+                'dateTime': end_time_iso,
+                # 'timeZone': 'America/Sao_Paulo',
+            },
+            # 'attendees': [
+            #     {'email': 'user@example.com'}, 
+            # ],
+            'reminders': {
+                'useDefault': True,
+            },
+        }
+
+        try:
+            print(f"Creating event: {event.get('summary')} from {start_time_iso} to {end_time_iso}")
+            created_event = self.service.events().insert(calendarId='primary', body=event).execute()
+            print(f'Event created: {created_event.get("htmlLink")}')
+            return True
+        except HttpError as error:
+            print(f'An HTTP error occurred creating the event: {error}')
+            return False
+        except Exception as e:
+             print(f'An unexpected error occurred creating the event: {e}')
+             return False
+
+    # TODO: Consider adding a method to free/delete a calendar event if needed
+    # async def free_calendar_event(self, event_id: str) -> bool:
+    #     ...
 
 def get_calendar_service():
     """
     Autentica e retorna uma instância do serviço da API do Google Calendar.
     """
     # Cria credenciais a partir do arquivo de conta de serviço
-    credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    credentials = Credentials.from_service_account_file(CREDENTIALS_PATH, scopes=SCOPES)
     # Constrói o serviço da API do Google Calendar
     service = build('calendar', 'v3', credentials=credentials)
     return service
@@ -53,7 +180,7 @@ def get_available_slots(date: str) -> list[datetime]:
 
         # Busca eventos no calendário dentro do intervalo de tempo especificado
         events_result = service.events().list(
-            calendarId=CALENDAR_ID,
+            calendarId='primary',
             timeMin=start_of_day.isoformat() + "Z",  # Início do dia
             timeMax=end_of_day.isoformat() + "Z",    # Fim do dia
             singleEvents=True,
@@ -144,7 +271,7 @@ def create_calendar_event(
         
         # Insere o evento no calendário
         event = service.events().insert(
-            calendarId=CALENDAR_ID,
+            calendarId='primary',
             body=event
         ).execute()
         

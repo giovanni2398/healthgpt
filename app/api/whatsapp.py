@@ -9,6 +9,7 @@ from app.services.conversation_state_service import ConversationStateService
 from app.services.scheduling_service import SchedulingService
 from app.services.appointment_orchestrator import AppointmentOrchestrator
 from app.services.chatgpt_service import ChatGPTService
+from app.services.calendar_service import CalendarService
 
 load_dotenv()
 
@@ -69,6 +70,7 @@ async def process_whatsapp_message(payload: dict):
     chatgpt_service = None # Lazy load if needed
     scheduling_service = None # Lazy load if needed
     orchestrator_service = None # Lazy load if needed
+    calendar_service = None # Add calendar service instance
 
     # --- 1. Extract relevant information from payload --- 
     # Meta's payload structure is complex. Need to extract message type, text, phone number etc.
@@ -348,12 +350,10 @@ async def process_whatsapp_message(payload: dict):
                     
                     # 2. Call placeholder function to create event
                     try:
-                        # TODO: Replace placeholder with actual call to Calendar service
-                        # calendar_service = CalendarService()
-                        # event_created = await calendar_service.create_event(start_time, end_time, patient_info)
-                        print(f"Placeholder: Calling create_calendar_event for {patient_name} at {start_time}")
-                        # Simulate success/failure for now
-                        event_created = True # Assume success for now
+                        if calendar_service is None: calendar_service = CalendarService() # Instantiate if needed
+                        
+                        # Call the actual calendar service method
+                        event_created = await calendar_service.create_calendar_event(start_time, end_time, patient_info)
 
                         if event_created:
                             # 3a. Event created successfully - Send final confirmation
@@ -372,16 +372,23 @@ async def process_whatsapp_message(payload: dict):
                                 f"Aguardamos você!"
                             )
                             new_state = "COMPLETED" # Final state
-                            # Keep context or clear it?
+                            # Keep context and add reserved slot ID
+                            new_context["reserved_slot_id"] = chosen_slot_id
                             state_service.save_state(phone_number, new_state, new_context) 
                         else:
                             # 3b. Event creation failed
                             print(f"GCal event creation FAILED for slot {chosen_slot_id}.")
                             reply_message = "Consegui reservar seu horário, mas ocorreu um problema ao registrar o agendamento na nossa agenda. Nossa equipe revisará e entrará em contato para confirmar, ok?"
                             # Free the slot that was reserved internally
-                            try: scheduling_service.free_slot(chosen_slot_id) # Placeholder for freeing slot
-                            except AttributeError: print("Placeholder: scheduling_service.free_slot not implemented")
-                            except Exception as free_err: print(f"Error freeing slot {chosen_slot_id}: {free_err}")
+                            try:
+                                cancelled = scheduling_service.cancel_appointment(chosen_slot_id)
+                                if cancelled:
+                                    print(f"Slot {chosen_slot_id} freed successfully after GCal failure.")
+                                else:
+                                    print(f"WARNING: Failed to free slot {chosen_slot_id} after GCal failure.")
+                            except Exception as free_err:
+                                print(f"ERROR freeing slot {chosen_slot_id} after GCal failure: {free_err}")
+                            # State transition outside the inner try/except
                             new_state = "HUMAN_TAKEOVER"
                             state_service.save_state(phone_number, new_state, context) # Keep context for human
 
@@ -389,15 +396,55 @@ async def process_whatsapp_message(payload: dict):
                         # Handle exceptions during the calendar creation attempt
                         print(f"ERROR during calendar event creation attempt for slot {chosen_slot_id}: {cal_err}")
                         reply_message = "Desculpe, ocorreu um erro inesperado ao tentar confirmar seu agendamento na agenda. Nossa equipe entrará em contato."
-                        # Free the slot
-                        try: scheduling_service.free_slot(chosen_slot_id) # Placeholder
-                        except AttributeError: print("Placeholder: scheduling_service.free_slot not implemented")
-                        except Exception as free_err: print(f"Error freeing slot {chosen_slot_id}: {free_err}")
+                        # Free the slot using cancel_appointment
+                        try:
+                            cancelled = scheduling_service.cancel_appointment(chosen_slot_id)
+                            if cancelled:
+                                print(f"Slot {chosen_slot_id} freed successfully after GCal exception.")
+                            else:
+                                print(f"WARNING: Failed to free slot {chosen_slot_id} after GCal exception.")
+                        except Exception as free_err:
+                            print(f"ERROR freeing slot {chosen_slot_id} after GCal exception: {free_err}")
+                        # State transition outside the inner try/except
                         new_state = "HUMAN_TAKEOVER"
                         state_service.save_state(phone_number, new_state, context)
 
-       except Exception as e:
-            print(f"Error reserving slot {chosen_slot_id}: {e}")
+            else: # Handle case where reserve_slot failed
+                # Slot could not be reserved (e.g., already taken, invalid ID)
+                error_message = reservation_result.get("error", "Não foi possível reservar este horário. Pode ser que ele tenha sido ocupado ou o ID é inválido.")
+                reply_message = f"{error_message} Por favor, escolha outro horário da lista abaixo."
+
+                # Re-fetch and display available slots
+                try:
+                    if scheduling_service is None: scheduling_service = SchedulingService()
+                    available_slots_retry = scheduling_service.get_available_slots()
+                    if not available_slots_retry:
+                        reply_message = "Desculpe, não há mais horários disponíveis no momento. Por favor, entre em contato conosco."
+                        new_state = "HUMAN_TAKEOVER" # No slots left, escalate
+                        state_service.save_state(phone_number, new_state, context)
+                    else:
+                        slot_options = []
+                        for slot in available_slots_retry:
+                            try:
+                                from datetime import datetime
+                                start_dt = datetime.fromisoformat(slot['start_time'])
+                                formatted_time = start_dt.strftime("%d/%m/%Y às %H:%M")
+                                slot_options.append(f"- {formatted_time} (ID: {slot['slot_id']})")
+                            except (ValueError, KeyError):
+                                slot_options.append(f"- Horário inválido (ID: {slot.get('slot_id', 'N/A')})")
+
+                        reply_message += "\n\n" + "Aqui estão os horários atualizados:\n" + "\n".join(slot_options) + "\n\nPor favor, digite o ID do horário que deseja escolher."
+                        new_state = "AWAITING_SLOT_CHOICE" # Stay in this state, but show list again
+                        state_service.save_state(phone_number, new_state, context) # Use original context
+
+                except Exception as get_slots_err:
+                    print(f"Error fetching available slots after reservation failure: {get_slots_err}")
+                    reply_message = "Ocorreu um erro ao verificar outros horários. Por favor, tente novamente mais tarde."
+                    new_state = "AWAITING_SLOT_PREFERENCE" # Go back further?
+                    state_service.save_state(phone_number, new_state, context)
+
+        except Exception as e:
+            print(f"Error during initial slot reservation attempt {chosen_slot_id}: {e}") # Clarify error source
             reply_message = "Ocorreu um erro ao tentar reservar seu horário. Por favor, tente novamente ou escolha outro horário da lista."
             # Go back to showing the list
             new_state = "AWAITING_SLOT_PREFERENCE" # Go back to the previous state to re-trigger list fetching
