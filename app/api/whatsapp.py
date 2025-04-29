@@ -396,7 +396,7 @@ async def process_whatsapp_message(payload: dict):
                         new_state = "HUMAN_TAKEOVER"
                         state_service.save_state(phone_number, new_state, context)
 
-        except Exception as e:
+       except Exception as e:
             print(f"Error reserving slot {chosen_slot_id}: {e}")
             reply_message = "Ocorreu um erro ao tentar reservar seu horário. Por favor, tente novamente ou escolha outro horário da lista."
             # Go back to showing the list
