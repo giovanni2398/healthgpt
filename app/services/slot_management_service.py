@@ -44,6 +44,10 @@ class SlotManagementService:
         conn.commit()
         conn.close()
     
+    def _get_connection(self):
+        """Get a connection to the SQLite database."""
+        return sqlite3.connect(self.db_path)
+    
     def generate_weekly_slots(self, 
                               start_date: datetime,
                               weeks_ahead: int = 4,
@@ -74,7 +78,7 @@ class SlotManagementService:
         )
         
         # Save slots to database
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
         
         for slot_id in slot_ids:
@@ -110,7 +114,7 @@ class SlotManagementService:
         Returns:
             List of available slot dictionaries
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -151,7 +155,7 @@ class SlotManagementService:
         Returns:
             True if successful, False otherwise
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
         
         cursor.execute(
@@ -176,7 +180,7 @@ class SlotManagementService:
         Returns:
             Number of slots removed
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
         
         cursor.execute(
