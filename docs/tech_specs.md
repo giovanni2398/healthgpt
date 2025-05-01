@@ -69,6 +69,17 @@ Key features:
 - Availability checking
 - Appointment creation
 - Event management
+- Scheduling optimization using patient preferences
+- Clinic-specific schedule configuration:
+  - Segunda/Quarta/Sexta: 14:00-17:45 (5 slots de 45 minutos)
+  - Terça/Quinta/Sábado: 8:30-12:15 (5 slots de 45 minutos)
+
+### ClinicSettings (`clinic_settings.py`)
+
+- Clinic working hours configuration
+- Appointment duration and interval settings
+- Available slots generation
+- Working days management
 
 ### Conversation State Manager (`conversation_state.py`)
 
@@ -98,6 +109,7 @@ Key features:
 - **Scope**: `https://www.googleapis.com/auth/calendar.events`
 - **Authentication**: OAuth 2.0
 - **Operations**: Read/Write calendar events
+- **Current Integration Status**: Mock implementation for testing, pending real API integration for availability checking while maintaining mocks for appointment creation/deletion
 
 ## Data Flow
 
@@ -242,3 +254,26 @@ WAITING_FOR_CONFIRMATION -> COMPLETED/ERROR
 - Creates appointments with proper event details
 - Sends confirmation with calendar event details
 - Handles rescheduling requests
+
+## Implementation Status
+
+The current development status as of February 2024:
+
+### Completed Features
+
+- Clinic schedule configuration
+- Appointment optimization algorithm
+- Calendar service structure
+- Unit tests for scheduling components
+
+### In Progress
+
+- Integration with real Google Calendar API for availability checking
+- Secure credential storage implementation
+
+### Pending
+
+- Real-world testing with appointment creation/deletion mocked
+- Documentation for new developers
+
+For detailed information about the current implementation status, see [Calendar Integration Status](calendar_integration_status.md).

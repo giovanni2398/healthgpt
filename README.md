@@ -113,18 +113,33 @@ O sistema suporta dois tipos de agendamento:
 ```
 HealthGPT/
 ├── app/
+│   ├── config/
+│   │   ├── clinic_settings.py
+│   │   └── config.py
 │   ├── services/
 │   │   ├── whatsapp_service.py
 │   │   ├── chatgpt_service.py
 │   │   ├── calendar_service.py
+│   │   ├── scheduling_preferences.py
+│   │   ├── insurance_service.py
 │   │   └── conversation_state.py
 │   ├── tests/
-│   │   └── test_*.py
+│   │   ├── test_calendar_service.py
+│   │   ├── test_chatgpt.py
+│   │   ├── test_clinic_settings.py
+│   │   ├── test_scheduling_optimizer.py
+│   │   ├── test_insurance_service.py
+│   │   ├── test_whatsapp_service.py
+│   │   └── test_conversation_state.py
 │   └── secrets/
 │       ├── credentials.json
 │       └── token.json
+├── tests/
+│   └── services/
+│       └── test_simplified_slot_service.py
 ├── docs/
-│   └── tech_specs.md
+│   ├── tech_specs.md
+│   └── calendar_integration_status.md
 ├── .env
 ├── requirements.txt
 └── README.md
@@ -176,6 +191,7 @@ pytest app/tests/ -v
   - Integração WhatsApp → ChatGPT → Google Calendar
   - Processamento de mensagens e confirmações
   - Testes de verificação de disponibilidade
+  - **Status Atual:** Implementamos o algoritmo de otimização de agendamento com horários específicos por dia da semana. Próxima etapa é incluir a integração real com a API do Google Calendar para testes das funcionalidades de verificar horários disponíveis, mantendo os mocks para criação e deleção de eventos para preservar o calendário real da clínica.
 
 - **Fase 4: Refinamento e Testes**
   - Testes unitários e de integração
@@ -184,7 +200,10 @@ pytest app/tests/ -v
 
 ## 📚 Documentação
 
-Para informações mais detalhadas sobre a implementação, fluxos e funcionalidades, consulte nossa [Documentação Técnica](docs/tech_specs.md).
+Para informações mais detalhadas sobre a implementação, fluxos e funcionalidades, consulte:
+
+- [Documentação Técnica](docs/tech_specs.md) - Visão geral técnica do sistema
+- [Status da Integração com Google Calendar](docs/calendar_integration_status.md) - Status atual e próximos passos da integração com o Google Calendar
 
 ## 🤝 Contribuindo
 
