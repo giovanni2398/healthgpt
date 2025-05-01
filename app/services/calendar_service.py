@@ -84,15 +84,23 @@ class CalendarService:
              print(f'An unexpected error occurred building the Calendar service: {e}')
              raise RuntimeError("Failed to build Google Calendar service.") from e
 
-    async def create_calendar_event(self, start_time_iso: str, end_time_iso: str, patient_info: dict) -> bool:
+    def create_calendar_event(
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        patient_name: str,
+        patient_phone: str,
+        reason: str
+    ) -> bool:
         """
         Creates an event on the user's primary Google Calendar.
 
         Args:
-            start_time_iso (str): Start time in ISO 8601 format (e.g., '2024-08-15T10:00:00-03:00').
-            end_time_iso (str): End time in ISO 8601 format (e.g., '2024-08-15T10:45:00-03:00').
-            patient_info (dict): Dictionary containing patient details 
-                                 (e.g., {'name': '...', 'dob': '...', 'phone': '...', 'insurance': '...'}).
+            start_time: Start time as datetime object
+            end_time: End time as datetime object
+            patient_name: Name of the patient
+            patient_phone: Phone number of the patient
+            reason: Reason for the appointment
 
         Returns:
             bool: True if the event was created successfully, False otherwise.
@@ -101,27 +109,26 @@ class CalendarService:
              print("ERROR: Google Calendar service not initialized.")
              return False
 
-        # TODO: Construct the event body according to Google Calendar API v3 format
-        # Example structure:
+        # Convert datetime objects to ISO format with timezone
+        start_time_iso = start_time.isoformat()
+        end_time_iso = end_time.isoformat()
+
+        # Construct the event body
         event = {
-            'summary': f'Consulta - {patient_info.get("name", "Paciente")}',
+            'summary': f'Consulta - {patient_name}',
             'description': (
-                f'Paciente: {patient_info.get("name")}\n'
-                f'Data Nasc: {patient_info.get("dob")}\n'
-                f'Telefone: {patient_info.get("phone")}\n'
-                f'Convênio: {patient_info.get("insurance")}'
+                f'Paciente: {patient_name}\n'
+                f'Telefone: {patient_phone}\n'
+                f'Motivo: {reason}'
             ),
             'start': {
                 'dateTime': start_time_iso,
-                # 'timeZone': 'America/Sao_Paulo', # Timezone should ideally be in the ISO string
+                'timeZone': 'America/Sao_Paulo',
             },
             'end': {
                 'dateTime': end_time_iso,
-                # 'timeZone': 'America/Sao_Paulo',
+                'timeZone': 'America/Sao_Paulo',
             },
-            # 'attendees': [
-            #     {'email': 'user@example.com'}, 
-            # ],
             'reminders': {
                 'useDefault': True,
             },
@@ -139,9 +146,61 @@ class CalendarService:
              print(f'An unexpected error occurred creating the event: {e}')
              return False
 
-    # TODO: Consider adding a method to free/delete a calendar event if needed
-    # async def free_calendar_event(self, event_id: str) -> bool:
-    #     ...
+    def get_available_slots(self, date: datetime) -> list[datetime]:
+        """
+        Retorna uma lista de horários disponíveis no calendário para uma data específica.
+        
+        Args:
+            date: Data para verificar disponibilidade
+            
+        Returns:
+            list[datetime]: Lista de horários disponíveis
+        """
+        try:
+            # Define o início e o fim do dia
+            start_of_day = datetime.combine(date.date(), datetime.min.time())
+            end_of_day = start_of_day + timedelta(days=1)
+
+            # Busca eventos no calendário dentro do intervalo de tempo especificado
+            events_result = self.service.events().list(
+                calendarId='primary',
+                timeMin=start_of_day.isoformat() + "Z",
+                timeMax=end_of_day.isoformat() + "Z",
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+
+            # Obtém a lista de eventos
+            events = events_result.get('items', [])
+
+            # Gera todos os horários possíveis entre 9h e 18h
+            all_slots = [
+                datetime.combine(date.date(), datetime.min.time().replace(hour=hour, minute=0))
+                for hour in range(9, 18)
+            ]
+
+            def slot_is_free(slot):
+                """
+                Verifica se um horário está livre, considerando os eventos existentes.
+                """
+                # Define o fim do horário (1 hora de duração)
+                slot_end = slot + timedelta(hours=1)
+                for event in events:
+                    # Converte os horários dos eventos para objetos datetime sem timezone
+                    event_start = datetime.fromisoformat(event['start']['dateTime']).replace(tzinfo=None)
+                    event_end = datetime.fromisoformat(event['end']['dateTime']).replace(tzinfo=None)
+                    # Verifica se o horário do slot conflita com o evento
+                    if event_start < slot_end and event_end > slot:
+                        return False
+                return True
+
+            # Filtra os horários disponíveis
+            available_slots = [slot for slot in all_slots if slot_is_free(slot)]
+            return available_slots
+
+        except Exception as e:
+            print(f"Erro ao buscar slots disponíveis: {e}")
+            return []
 
 def get_calendar_service():
     """
