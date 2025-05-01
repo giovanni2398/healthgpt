@@ -129,13 +129,13 @@ HealthGPT/
   - Configuração de ambiente
   - Integrações básicas
 
-- **Fase 2: Simplificação da Arquitetura** 🚧
+- **Fase 2: Simplificação da Arquitetura** ✅
 
   - Remoção de funcionalidades não essenciais
   - Foco nas integrações principais
   - Simplificação da estrutura de API
 
-- **Fase 3: Implementação do Fluxo Principal**
+- **Fase 3: Implementação do Fluxo Principal** 🚧
 
   - Integração WhatsApp → ChatGPT → Google Calendar
   - Processamento de mensagens e confirmações
@@ -151,21 +151,5 @@ HealthGPT/
 Inicie o servidor FastAPI:
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn app.main:app --reload
 ```
-
-## 📝 Considerações de Design
-
-Este projeto prioriza a simplicidade e eficiência focando apenas nas integrações essenciais. Utilizamos:
-
-- **Integrações diretas** com APIs de terceiros
-- **Processamento assíncrono** para melhor performance
-- **Fluxo unidirecional** de processamento de mensagens
-
-Por opção de design, removemos:
-
-- Sistema complexo de registros (logs)
-- Interface web administrativa
-- Endpoints de API desnecessários
-
-Futuras melhorias podem incluir adição gradual dessas funcionalidades conforme necessário.
