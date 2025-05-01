@@ -1,14 +1,19 @@
 import os
 import datetime
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
+from app.services.scheduling_preferences import (
+    SchedulingOptimizer,
+    PatientPreferences
+)
+from app.config.clinic_settings import ClinicSettings
 
 # Carrega as variáveis de ambiente do arquivo .env
 load_dotenv()
@@ -33,165 +38,154 @@ CREDENTIALS_PATH = os.path.join(SECRETS_DIR, 'credentials.json')
 TOKEN_PATH = os.path.join(SECRETS_DIR, 'token.json')
 
 class CalendarService:
+    """Serviço para integração com o Google Calendar"""
+    
     def __init__(self):
-        self.service = self._authenticate()
-
-    def _authenticate(self):
-        """Handles the OAuth 2.0 authentication flow for Google Calendar API."""
-        creds = None
-        # The file token.json stores the user's access and refresh tokens, and is
-        # created automatically when the authorization flow completes for the first
-        # time.
-        if os.path.exists(TOKEN_PATH):
-            try:
-                creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
-            except Exception as e:
-                print(f"Error loading token file: {e}. Need to re-authenticate.")
-                creds = None
+        self.calendar_id = os.getenv('GOOGLE_CALENDAR_ID')
+        self.credentials = self._get_credentials()
+        self.service = build('calendar', 'v3', credentials=self.credentials)
+        self.optimizer = SchedulingOptimizer()
+    
+    def _get_credentials(self) -> Credentials:
+        """Obtém as credenciais do Google Calendar"""
+        # Implementar a lógica para obter as credenciais
+        # Pode ser através de um arquivo de credenciais ou OAuth2
+        pass
+    
+    def check_availability(self, start_time: datetime, duration: int = ClinicSettings.DEFAULT_APPOINTMENT_DURATION) -> bool:
+        """
+        Verifica se um horário específico está disponível.
         
-        # If there are no (valid) credentials available, let the user log in.
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                try:
-                    print("Credentials expired, refreshing...")
-                    creds.refresh(Request())
-                except Exception as e:
-                    print(f"Error refreshing credentials: {e}. Need to re-authenticate.")
-                    creds = None # Force re-authentication
-            else:
-                # Only run the flow if credentials file exists
-                if not os.path.exists(CREDENTIALS_PATH):
-                    raise FileNotFoundError(f"Credentials file not found at {CREDENTIALS_PATH}. Please obtain it from Google Cloud Console.")
-                
-                print(f"Credentials not found or invalid. Starting auth flow using {CREDENTIALS_PATH}...")
-                try:
-                    # Use InstalledAppFlow for initial authorization
-                    flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
-                    # The port 0 allows it to find an available port dynamically
-                    # You might need to adjust launch_browser=False depending on environment
-                    creds = flow.run_local_server(port=0, launch_browser=True)
-                    print("Authentication successful!")
-                except Exception as e:
-                    print(f"Error during authentication flow: {e}")
-                    raise RuntimeError("Failed to complete Google authentication flow.") from e
-            
-            # Save the credentials for the next run
-            try:
-                os.makedirs(SECRETS_DIR, exist_ok=True) # Ensure secrets directory exists
-                with open(TOKEN_PATH, 'w') as token:
-                    token.write(creds.to_json())
-                print(f"Credentials saved to {TOKEN_PATH}")
-            except Exception as e:
-                 print(f"Error saving token file: {e}")
-                 # Proceed without saving if saving fails, but warn user
-
-        try:
-            service = build('calendar', 'v3', credentials=creds)
-            print("Google Calendar service built successfully.")
-            return service
-        except HttpError as error:
-            print(f'An error occurred building the Calendar service: {error}')
-            raise RuntimeError("Failed to build Google Calendar service.") from error
-        except Exception as e:
-             print(f'An unexpected error occurred building the Calendar service: {e}')
-             raise RuntimeError("Failed to build Google Calendar service.") from e
-
-    def create_calendar_event(self, event: CalendarEvent) -> bool:
-        """
-        Creates an event on the user's primary Google Calendar.
-
         Args:
-            event: CalendarEvent object containing event details
-
+            start_time: Horário de início da consulta
+            duration: Duração da consulta em minutos
+            
         Returns:
-            bool: True if the event was created successfully, False otherwise.
+            bool: True se o horário estiver disponível, False caso contrário
         """
-        if not self.service:
-             print("ERROR: Google Calendar service not initialized.")
-             return False
-
-        # Convert datetime objects to ISO format with timezone
-        start_time_iso = event.start_time.isoformat()
-        end_time_iso = event.end_time.isoformat()
-
-        # Construct the event body
-        event_body = {
-            'summary': f'Consulta - {event.patient_name}',
-            'description': (
-                f'Paciente: {event.patient_name}\n'
-                f'Telefone: {event.patient_phone}\n'
-                f'Motivo: {event.reason}\n'
-                f'Convênio: {event.insurance or "Particular"}'
-            ),
-            'start': {
-                'dateTime': start_time_iso,
-                'timeZone': 'America/Sao_Paulo',
-            },
-            'end': {
-                'dateTime': end_time_iso,
-                'timeZone': 'America/Sao_Paulo',
-            },
-            'reminders': {
-                'useDefault': True,
-            },
-        }
-
-        try:
-            print(f"Creating event: {event_body.get('summary')} from {start_time_iso} to {end_time_iso}")
-            created_event = self.service.events().insert(calendarId='primary', body=event_body).execute()
-            print(f'Event created: {created_event.get("htmlLink")}')
-            return True
-        except HttpError as error:
-            print(f'An HTTP error occurred creating the event: {error}')
+        # Verifica se o horário está dentro do horário de funcionamento
+        if not self._is_within_working_hours(start_time, duration):
             return False
-        except Exception as e:
-             print(f'An unexpected error occurred creating the event: {e}')
-             return False
-
-    def check_availability(self, start_time: datetime, end_time: datetime) -> bool:
-        """
-        Verifica se há disponibilidade no horário solicitado.
-        """
-        events_result = self.service.events().list(
-            calendarId='primary',
-            timeMin=start_time.isoformat() + "Z",
-            timeMax=end_time.isoformat() + "Z",
-            singleEvents=True,
-            orderBy='startTime'
+        
+        end_time = start_time + timedelta(minutes=duration)
+        
+        events = self.service.events().list(
+            calendarId=self.calendar_id,
+            timeMin=start_time.isoformat(),
+            timeMax=end_time.isoformat(),
+            singleEvents=True
         ).execute()
         
-        events = events_result.get('items', [])
-        return len(events) == 0
-
-    def get_available_slots(self, date: datetime, duration: int = 60) -> list[datetime]:
+        return len(events.get('items', [])) == 0
+    
+    def get_available_slots(self, 
+                          date: datetime,
+                          duration: int = ClinicSettings.DEFAULT_APPOINTMENT_DURATION,
+                          preferences: Optional[PatientPreferences] = None) -> List[datetime]:
         """
-        Retorna uma lista de horários disponíveis para o dia especificado.
-        """
-        available_slots = []
-        start_of_day = date.replace(hour=9, minute=0, second=0)
-        end_of_day = date.replace(hour=18, minute=0, second=0)
+        Retorna uma lista de horários disponíveis para um dia específico.
         
-        current_time = start_of_day
-        while current_time + timedelta(minutes=duration) <= end_of_day:
-            if self.check_availability(current_time, 
-                                     current_time + timedelta(minutes=duration)):
-                available_slots.append(current_time)
-            current_time += timedelta(minutes=30)
+        Args:
+            date: Data para verificar disponibilidade
+            duration: Duração da consulta em minutos
+            preferences: Preferências do paciente para otimização
+            
+        Returns:
+            List[datetime]: Lista de horários disponíveis
+        """
+        # Verifica se é um dia de funcionamento
+        day = date.strftime('%A').lower()
+        if day not in ClinicSettings.WORKING_DAYS:
+            return []
+        
+        # Obtém os slots disponíveis para o dia
+        available_slots = []
+        for slot_time in ClinicSettings.get_available_slots(day):
+            slot = datetime.combine(date.date(), slot_time)
+            if self.check_availability(slot, duration):
+                available_slots.append(slot)
+        
+        # Se houver preferências, otimiza os slots
+        if preferences:
+            available_slots = self.optimizer.get_optimal_slots(
+                available_slots,
+                preferences,
+                duration
+            )
         
         return available_slots
-
+    
+    def _is_within_working_hours(self, start_time: datetime, duration: int) -> bool:
+        """Verifica se o horário está dentro do horário de funcionamento"""
+        day = start_time.strftime('%A').lower()
+        if day not in ClinicSettings.WORKING_HOURS:
+            return False
+        
+        hours = ClinicSettings.WORKING_HOURS[day]
+        slot_time = start_time.time()
+        slot_end = (start_time + timedelta(minutes=duration)).time()
+        
+        return (hours['start'] <= slot_time and 
+                slot_end <= hours['end'])
+    
+    def _is_lunch_time(self, start_time: datetime, duration: int) -> bool:
+        """Verifica se o horário está dentro do período de almoço"""
+        slot_time = start_time.time()
+        slot_end = (start_time + timedelta(minutes=duration)).time()
+        
+        return (ClinicSettings.LUNCH_TIME_START <= slot_time < ClinicSettings.LUNCH_TIME_END or
+                ClinicSettings.LUNCH_TIME_START < slot_end <= ClinicSettings.LUNCH_TIME_END)
+    
+    def create_calendar_event(self, event: CalendarEvent) -> str:
+        """
+        Cria um evento no calendário.
+        
+        Args:
+            event: Dados do evento a ser criado
+            
+        Returns:
+            str: ID do evento criado
+        """
+        calendar_event = {
+            'summary': f'Consulta: {event.patient_name}',
+            'description': f'Paciente: {event.patient_name}\n'
+                         f'Telefone: {event.patient_phone}\n'
+                         f'Motivo: {event.reason}\n'
+                         f'Convênio: {event.insurance or "Particular"}',
+            'start': {
+                'dateTime': event.start_time.isoformat(),
+                'timeZone': 'America/Sao_Paulo'
+            },
+            'end': {
+                'dateTime': event.end_time.isoformat(),
+                'timeZone': 'America/Sao_Paulo'
+            }
+        }
+        
+        created_event = self.service.events().insert(
+            calendarId=self.calendar_id,
+            body=calendar_event
+        ).execute()
+        
+        return created_event['id']
+    
     def cancel_appointment(self, event_id: str) -> bool:
         """
-        Cancela um agendamento existente.
+        Cancela um agendamento.
+        
+        Args:
+            event_id: ID do evento a ser cancelado
+            
+        Returns:
+            bool: True se o cancelamento foi bem sucedido, False caso contrário
         """
         try:
             self.service.events().delete(
-                calendarId='primary',
+                calendarId=self.calendar_id,
                 eventId=event_id
             ).execute()
             return True
-        except Exception as e:
-            print(f"Erro ao cancelar evento: {str(e)}")
+        except Exception:
             return False
 
 def get_calendar_service():
