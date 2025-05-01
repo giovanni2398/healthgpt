@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import httpx
 
 from app.services.chatgpt_service import ChatGPTService
+from app.services.conversation_state import ConversationState, ConversationManager
 
 load_dotenv()
 
@@ -23,6 +24,7 @@ class WhatsAppService:
         self.token = os.getenv("WHATSAPP_API_TOKEN")
         self.phone_number_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
         self.chatgpt_service = ChatGPTService()
+        self.conversation_manager = ConversationManager()
 
         if not self.token or not self.phone_number_id:
             print("Warning: WhatsApp credentials (Token or Phone Number ID) not found in .env")
@@ -38,15 +40,39 @@ class WhatsAppService:
         phone = payload.get("from")
         text = payload.get("text")
         
-        # Processa a mensagem com ChatGPT
+        # Obtém o estado atual da conversação
+        current_state = self.conversation_manager.get_state(phone)
+        
+        # Sistema para guiar a resposta do ChatGPT
         system_message = """
         Você é um assistente de agendamento de uma clínica de nutrição.
         Sua função é ajudar os pacientes a agendarem consultas.
         Seja educado, profissional e direto.
+        
+        Se o paciente mencionar uma data específica, indique no seu retorno com o formato
+        DATA_MENCIONADA: YYYY-MM-DD para que eu possa verificar disponibilidade.
+        
+        Se o paciente mencionar um horário específico, indique no seu retorno com o formato
+        HORARIO_MENCIONADO: HH:MM para que eu possa verificar disponibilidade.
         """
+        
+        # Processa a mensagem com ChatGPT
         response = self.chatgpt_service.generate_response(text, system_message)
         
-        return {"phone": phone, "text": text, "response": response}
+        # Atualiza o estado da conversação com base na resposta
+        if "DATA_MENCIONADA:" in response:
+            date_str = response.split("DATA_MENCIONADA:")[1].strip().split()[0]
+            if self.conversation_manager.is_valid_date(date_str):
+                self.conversation_manager.update_data(phone, {"date": date_str})
+                self.conversation_manager.set_state(phone, ConversationState.WAITING_FOR_TIME)
+        
+        if "HORARIO_MENCIONADO:" in response:
+            time_str = response.split("HORARIO_MENCIONADO:")[1].strip().split()[0]
+            if self.conversation_manager.is_valid_time(time_str):
+                self.conversation_manager.update_data(phone, {"time": time_str})
+                self.conversation_manager.set_state(phone, ConversationState.WAITING_FOR_CONFIRMATION)
+        
+        return {"phone": phone, "text": text, "response": response, "state": current_state.value}
 
     def send_message(self, phone: str, message: str) -> bool:
         """

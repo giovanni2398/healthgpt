@@ -3,10 +3,12 @@ import json
 from fastapi import APIRouter, Request, Response, HTTPException, status, BackgroundTasks
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+from datetime import datetime
 
 from app.services.whatsapp_service import WhatsAppService
 from app.services.chatgpt_service import ChatGPTService
 from app.services.calendar_service import CalendarService
+from app.services.conversation_state import ConversationState
 
 load_dotenv()
 
@@ -100,34 +102,50 @@ async def process_whatsapp_message(payload: dict):
 
     # --- 2. Processar a mensagem com o ChatGPT ---
     try:
-        # Sistema para guiar a resposta do ChatGPT
-        system_message = """
-        Você é um assistente de agendamento para uma clínica de nutrição. Sua função é:
-        1. Entender se o paciente deseja agendar uma consulta
-        2. Se sim, identificar possíveis datas/horários mencionados
-        3. Responder de forma amigável e profissional
+        # Processa a mensagem e obtém o estado atual
+        result = whatsapp_service.receive_message({
+            "from": phone_number,
+            "text": message_text
+        })
         
-        Se o paciente mencionar uma data específica, indique no seu retorno com o formato
-        DATA_MENCIONADA: YYYY-MM-DD para que eu possa verificar disponibilidade.
-        """
+        current_state = result["state"]
+        response = result["response"]
         
-        # Gerar resposta com ChatGPT
-        response = chatgpt_service.generate_response(message_text, system_message)
-        
-        # Verificar se ChatGPT identificou uma data
-        if "DATA_MENCIONADA:" in response:
-            # Extrair a data
-            date_str = response.split("DATA_MENCIONADA:")[1].strip().split()[0]
+        # Lógica baseada no estado atual
+        if current_state == ConversationState.WAITING_FOR_TIME.value:
+            # Verificar slots disponíveis para a data
+            conversation_data = whatsapp_service.conversation_manager.get_data(phone_number)
+            date_str = conversation_data.get("date")
             
-            # Verificar slots disponíveis
-            available_slots = calendar_service.get_available_slots(date_str)
-            
-            if available_slots:
-                # Formatar slots disponíveis
-                slots_text = "\n".join([f"- {slot['time']}" for slot in available_slots[:5]])
-                reply = f"Encontrei os seguintes horários disponíveis para {date_str}:\n\n{slots_text}\n\nDeseja confirmar algum destes horários?"
+            if date_str:
+                available_slots = calendar_service.get_available_slots(date_str)
+                
+                if available_slots:
+                    # Formatar slots disponíveis
+                    slots_text = "\n".join([f"- {slot['time']}" for slot in available_slots[:5]])
+                    reply = f"Encontrei os seguintes horários disponíveis para {date_str}:\n\n{slots_text}\n\nDeseja confirmar algum destes horários?"
+                else:
+                    reply = f"Infelizmente não temos horários disponíveis para {date_str}. Poderia sugerir outra data?"
             else:
-                reply = f"Infelizmente não temos horários disponíveis para {date_str}. Poderia sugerir outra data?"
+                reply = "Desculpe, não consegui identificar a data. Poderia informar novamente?"
+                
+        elif current_state == ConversationState.WAITING_FOR_CONFIRMATION.value:
+            # Verificar se o horário está disponível
+            conversation_data = whatsapp_service.conversation_manager.get_data(phone_number)
+            date_str = conversation_data.get("date")
+            time_str = conversation_data.get("time")
+            
+            if date_str and time_str:
+                # Verificar disponibilidade do horário específico
+                is_available = calendar_service.check_slot_availability(date_str, time_str)
+                
+                if is_available:
+                    reply = f"Ótimo! O horário {time_str} do dia {date_str} está disponível. Deseja confirmar o agendamento?"
+                else:
+                    reply = f"Desculpe, o horário {time_str} do dia {date_str} não está mais disponível. Poderia escolher outro horário?"
+            else:
+                reply = "Desculpe, não consegui identificar a data e horário. Poderia informar novamente?"
+                
         else:
             # Usar a resposta direta do ChatGPT
             reply = response
