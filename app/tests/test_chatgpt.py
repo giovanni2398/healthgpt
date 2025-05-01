@@ -14,7 +14,7 @@ def test_chatgpt_service_initialization():
     with patch.dict(os.environ, {}, clear=True):
         with pytest.raises(ValueError) as exc_info:
             ChatGPTService()
-        assert "OPENAI_API_KEY não encontrada nas variáveis de ambiente" in str(exc_info.value)
+        assert "OpenAI API key not found in environment variables" in str(exc_info.value)
 
 @patch('app.services.chatgpt_service.OpenAI')
 def test_generate_response_success(mock_openai):
@@ -40,7 +40,7 @@ def test_generate_response_error_handling(mock_openai):
     # Test error handling
     with patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"}):
         service = ChatGPTService()
-        response = service.generate_response("Test prompt")
+        with pytest.raises(RuntimeError) as exc_info:
+            service.generate_response("Test prompt")
         
-        assert "Desculpe, ocorreu um erro ao processar sua mensagem" in response
-        assert "Test error" in response
+        assert "Failed to generate response from OpenAI: Test error" in str(exc_info.value)
