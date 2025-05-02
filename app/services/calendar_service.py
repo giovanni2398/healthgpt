@@ -1,8 +1,10 @@
 import os
 import datetime
+import logging
 from dataclasses import dataclass
 from typing import Optional, List
 from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -14,6 +16,11 @@ from app.services.scheduling_preferences import (
     PatientPreferences
 )
 from app.config.clinic_settings import ClinicSettings
+import json
+import pytz
+
+# Configurar logging
+logger = logging.getLogger(__name__)
 
 # Carrega as variáveis de ambiente do arquivo .env
 load_dotenv()
@@ -35,6 +42,7 @@ SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 # Assumes the script is run from the project root
 SECRETS_DIR = os.path.join('app', 'secrets')
 CREDENTIALS_PATH = os.path.join(SECRETS_DIR, 'credentials.json')
+SERVICE_ACCOUNT_PATH = os.path.join(SECRETS_DIR, 'service_account.json')
 TOKEN_PATH = os.path.join(SECRETS_DIR, 'token.json')
 
 class CalendarService:
@@ -47,10 +55,67 @@ class CalendarService:
         self.optimizer = SchedulingOptimizer()
     
     def _get_credentials(self) -> Credentials:
-        """Obtém as credenciais do Google Calendar"""
-        # Implementar a lógica para obter as credenciais
-        # Pode ser através de um arquivo de credenciais ou OAuth2
-        pass
+        """
+        Obtém as credenciais do Google Calendar.
+        
+        Tenta primeiro usar Service Account, e caso não encontre,
+        usa autenticação OAuth.
+        
+        Returns:
+            Credentials: Credenciais para a API do Google Calendar
+        """
+        try:
+            # Verifica se existe um arquivo de conta de serviço e tenta usá-lo primeiro
+            if os.path.exists(SERVICE_ACCOUNT_PATH):
+                logger.info("Usando credenciais de conta de serviço")
+                return service_account.Credentials.from_service_account_file(
+                    SERVICE_ACCOUNT_PATH, scopes=SCOPES
+                )
+            
+            # Caso não exista conta de serviço, tenta autenticação OAuth
+            creds = None
+            # Se existe um arquivo de token, carrega as credenciais dele
+            if os.path.exists(TOKEN_PATH):
+                # Use Credentials.from_authorized_user_file for safer loading
+                try:
+                    creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+                    logger.info("Loaded credentials from token.json")
+                except Exception as e:
+                    logger.warning(f"Could not load token file ({TOKEN_PATH}): {e}. Will attempt re-authentication.")
+                    creds = None # Ensure creds is None if loading fails
+            
+            # Se não há credenciais válidas, ou elas expiraram, solicita novas
+            if not creds or not creds.valid:
+                if creds and creds.expired and creds.refresh_token:
+                    # Renova o token se expirado
+                    logger.info("Refreshing expired credentials...")
+                    creds.refresh(Request())
+                else:
+                    # Realiza novo fluxo de autenticação
+                    logger.info("No valid credentials found, initiating OAuth flow...")
+                    if not os.path.exists(CREDENTIALS_PATH):
+                        raise FileNotFoundError(
+                            f"Arquivo de credenciais não encontrado em {CREDENTIALS_PATH}. "
+                            "Siga as instruções em app/secrets/README.md para configurar as credenciais."
+                        )
+                    
+                    flow = InstalledAppFlow.from_client_secrets_file(
+                        CREDENTIALS_PATH, SCOPES
+                    )
+                    creds = flow.run_local_server(port=0)
+                
+                # Salva as credenciais para uso futuro
+                with open(TOKEN_PATH, 'w') as token:
+                    # Use creds.to_json() for standard JSON serialization
+                    token.write(creds.to_json())
+                    logger.info(f"Saved credentials to {TOKEN_PATH}")
+            
+            return creds
+        
+        except Exception as e:
+            logger.error(f"Erro ao obter credenciais do Google Calendar: {e}")
+            # Retorna None para permitir mock em testes
+            return None
     
     def check_availability(self, start_time: datetime, duration: int = ClinicSettings.DEFAULT_APPOINTMENT_DURATION) -> bool:
         """
@@ -63,20 +128,65 @@ class CalendarService:
         Returns:
             bool: True se o horário estiver disponível, False caso contrário
         """
-        # Verifica se o horário está dentro do horário de funcionamento
-        if not self._is_within_working_hours(start_time, duration):
+        try:
+            # Verifica se o horário está dentro do horário de funcionamento
+            if not self._is_within_working_hours(start_time, duration):
+                logger.info(f"Horário {start_time} fora do horário de funcionamento")
+                return False
+            
+            # Verifica se temos credenciais e serviço configurados
+            if not self.credentials or not self.service:
+                logger.error("Credenciais ou serviço não disponíveis")
+                return False
+                
+            # Define the local timezone
+            local_tz = pytz.timezone('America/Sao_Paulo') # Or your specific timezone
+            
+            # Ensure start_time is timezone-aware
+            if start_time.tzinfo is None:
+                aware_start_time = local_tz.localize(start_time)
+            else:
+                aware_start_time = start_time.astimezone(local_tz)
+            
+            # Calculate end time based on the aware start time
+            aware_end_time = aware_start_time + timedelta(minutes=duration)
+            
+            logger.info(f"Verificando disponibilidade (aware): {aware_start_time} - {aware_end_time}")
+            
+            # Formata as datas para ISO8601 (timezone info is now included)
+            time_min = aware_start_time.isoformat()
+            time_max = aware_end_time.isoformat()
+            
+            # Tenta até 3 vezes em caso de erros temporários
+            max_retries = 3
+            retry_count = 0
+            
+            while retry_count < max_retries:
+                try:
+                    events = self.service.events().list(
+                        calendarId=self.calendar_id,
+                        timeMin=time_min,
+                        timeMax=time_max,
+                        singleEvents=True
+                    ).execute()
+                    
+                    is_available = len(events.get('items', [])) == 0
+                    # Log using the original naive start_time for consistency if needed, or use aware_start_time
+                    logger.info(f"Horário {start_time.strftime('%Y-%m-%d %H:%M')} ({local_tz.zone}) {'disponível' if is_available else 'indisponível'}")
+                    return is_available
+                except HttpError as e:
+                    retry_count += 1
+                    if retry_count >= max_retries:
+                        logger.error(f"Erro ao verificar disponibilidade após {max_retries} tentativas: {e}")
+                        return False
+                    logger.warning(f"Tentativa {retry_count}/{max_retries} falhou: {e}")
+                    # Aguarda um pouco antes de tentar novamente
+                    import time
+                    time.sleep(1)
+        
+        except Exception as e:
+            logger.error(f"Erro ao verificar disponibilidade: {e}")
             return False
-        
-        end_time = start_time + timedelta(minutes=duration)
-        
-        events = self.service.events().list(
-            calendarId=self.calendar_id,
-            timeMin=start_time.isoformat(),
-            timeMax=end_time.isoformat(),
-            singleEvents=True
-        ).execute()
-        
-        return len(events.get('items', [])) == 0
     
     def get_available_slots(self, 
                           date: datetime,
@@ -93,27 +203,38 @@ class CalendarService:
         Returns:
             List[datetime]: Lista de horários disponíveis
         """
-        # Verifica se é um dia de funcionamento
-        day = date.strftime('%A').lower()
-        if day not in ClinicSettings.WORKING_DAYS:
+        try:
+            # Verifica se é um dia de funcionamento
+            day = date.strftime('%A').lower()
+            if day not in ClinicSettings.WORKING_DAYS:
+                logger.info(f"Dia {date.strftime('%d/%m/%Y')} ({day}) não é dia de funcionamento")
+                return []
+            
+            logger.info(f"Buscando slots disponíveis para {date.strftime('%d/%m/%Y')}")
+            
+            # Obtém os slots disponíveis para o dia
+            available_slots = []
+            for slot_time in ClinicSettings.get_available_slots(day):
+                slot = datetime.combine(date.date(), slot_time)
+                if self.check_availability(slot, duration):
+                    available_slots.append(slot)
+            
+            logger.info(f"Encontrados {len(available_slots)} slots disponíveis")
+            
+            # Se houver preferências, otimiza os slots
+            if preferences:
+                logger.info("Otimizando slots com base nas preferências do paciente")
+                available_slots = self.optimizer.get_optimal_slots(
+                    available_slots,
+                    preferences,
+                    duration
+                )
+            
+            return available_slots
+        
+        except Exception as e:
+            logger.error(f"Erro ao buscar slots disponíveis: {e}")
             return []
-        
-        # Obtém os slots disponíveis para o dia
-        available_slots = []
-        for slot_time in ClinicSettings.get_available_slots(day):
-            slot = datetime.combine(date.date(), slot_time)
-            if self.check_availability(slot, duration):
-                available_slots.append(slot)
-        
-        # Se houver preferências, otimiza os slots
-        if preferences:
-            available_slots = self.optimizer.get_optimal_slots(
-                available_slots,
-                preferences,
-                duration
-            )
-        
-        return available_slots
     
     def _is_within_working_hours(self, start_time: datetime, duration: int) -> bool:
         """Verifica se o horário está dentro do horário de funcionamento"""
