@@ -203,18 +203,39 @@ class CalendarService:
         Returns:
             List[datetime]: Lista de horários disponíveis
         """
+        # Map weekday() result (Mon=0, Sun=6) to ClinicSettings keys
+        day_mapping = {
+            0: 'monday',
+            1: 'tuesday',
+            2: 'wednesday',
+            3: 'thursday',
+            4: 'friday',
+            5: 'saturday',
+            6: 'sunday' # Add sunday even if not typically used, for completeness
+        }
+        
         try:
-            # Verifica se é um dia de funcionamento
-            day = date.strftime('%A').lower()
-            if day not in ClinicSettings.WORKING_DAYS:
-                logger.info(f"Dia {date.strftime('%d/%m/%Y')} ({day}) não é dia de funcionamento")
+            # Get numeric weekday and map to English name
+            weekday_num = date.weekday()
+            day_key = day_mapping.get(weekday_num)
+
+            # Verifica se é um dia de funcionamento using the English key
+            # day = date.strftime('%A').lower() # OLD WAY
+            if not day_key or day_key not in ClinicSettings.WORKING_DAYS:
+                # Log the original Portuguese name for clarity if possible
+                try:
+                    locale_day_name = date.strftime('%A')
+                except:
+                    locale_day_name = f"Weekday {weekday_num}" # Fallback
+                logger.info(f"Dia {date.strftime('%d/%m/%Y')} ({locale_day_name}) não é dia de funcionamento (key: {day_key})")
                 return []
             
-            logger.info(f"Buscando slots disponíveis para {date.strftime('%d/%m/%Y')}")
+            logger.info(f"Buscando slots disponíveis para {date.strftime('%d/%m/%Y')} (key: {day_key})")
             
-            # Obtém os slots disponíveis para o dia
+            # Obtém os slots disponíveis para o dia using the English key
             available_slots = []
-            for slot_time in ClinicSettings.get_available_slots(day):
+            # Use day_key for the lookup in ClinicSettings
+            for slot_time in ClinicSettings.get_available_slots(day_key):
                 slot = datetime.combine(date.date(), slot_time)
                 if self.check_availability(slot, duration):
                     available_slots.append(slot)
@@ -238,11 +259,26 @@ class CalendarService:
     
     def _is_within_working_hours(self, start_time: datetime, duration: int) -> bool:
         """Verifica se o horário está dentro do horário de funcionamento"""
-        day = start_time.strftime('%A').lower()
-        if day not in ClinicSettings.WORKING_HOURS:
+        # Map weekday() result (Mon=0, Sun=6) to ClinicSettings keys
+        day_mapping = {
+            0: 'monday',
+            1: 'tuesday',
+            2: 'wednesday',
+            3: 'thursday',
+            4: 'friday',
+            5: 'saturday',
+            6: 'sunday'
+        }
+        
+        # Get numeric weekday and map to English name
+        weekday_num = start_time.weekday()
+        day_key = day_mapping.get(weekday_num)
+        
+        # day = start_time.strftime('%A').lower() # OLD WAY
+        if not day_key or day_key not in ClinicSettings.WORKING_HOURS:
             return False
         
-        hours = ClinicSettings.WORKING_HOURS[day]
+        hours = ClinicSettings.WORKING_HOURS[day_key] # Use the mapped key
         slot_time = start_time.time()
         slot_end = (start_time + timedelta(minutes=duration)).time()
         
