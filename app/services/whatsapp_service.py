@@ -320,30 +320,76 @@ class WhatsAppService:
         reason: str
     ) -> bool:
         """
-        Envia uma mensagem de confirmação de agendamento.
+        Envia uma mensagem de confirmação de agendamento via WhatsApp usando um template.
         
         Args:
-            phone: Número de telefone do paciente
+            phone: Número de telefone do paciente (formato E.164 recomendado)
             patient_name: Nome do paciente
-            appointment_date: Data e hora do agendamento
-            reason: Motivo da consulta
+            appointment_date: Data e hora do agendamento (objeto datetime)
+            reason: Motivo da consulta (não usado diretamente no template, mas pode ser útil para logs ou futuras variações)
             
         Returns:
             bool: True se a mensagem foi enviada com sucesso
         """
-        # Formata a data para exibição
-        formatted_date = appointment_date.strftime("%d/%m/%Y às %H:%M")
+        # --- Configuração do Template ---
+        # !!! Substitua pelo nome exato do seu template aprovado !!!
+        template_name = "appointment_confirmation_v1" 
+        language_code = "pt_BR"
         
-        # Cria a mensagem de confirmação
-        message = (
-            f"✅ Agendamento Confirmado!\n\n"
-            f"Olá {patient_name},\n\n"
-            f"Seu agendamento foi confirmado para:\n"
-            f"📅 Data: {formatted_date}\n"
-            f"📝 Motivo: {reason}\n\n"
-            f"Se precisar reagendar ou cancelar, entre em contato conosco.\n"
-            f"Até breve! 👋"
+        # --- Formatação das Variáveis ---
+        try:
+            # Formata a data e hora para o template (ex: "13/04/2025 - 08:30")
+            formatted_date_time = appointment_date.strftime("%d/%m/%Y - %H:%M")
+        except AttributeError:
+            # Handle cases where appointment_date might not be a datetime object
+            print(f"Error formatting appointment date: {appointment_date}")
+            formatted_date_time = "Data/Hora inválida"
+            # Optionally return False or raise an error
+            return False
+
+        # --- Construção dos Componentes (Variáveis) --- 
+        # A estrutura é: corpo (body) com parâmetros (parameters) do tipo texto (text)
+        components = [
+            {
+                "type": "body",
+                "parameters": [
+                    {
+                        "type": "text",
+                        "text": patient_name
+                    },
+                    {
+                        "type": "text",
+                        "text": formatted_date_time
+                    }
+                    # Adicione mais parâmetros aqui se seu template tiver mais variáveis
+                ]
+            }
+            # Adicione outros tipos de componentes (header, button) se seu template os utilizar
+        ]
+        
+        # --- Envio via Template ---
+        print(f"Sending template '{template_name}' to {phone} with components: {components}")
+        return self.send_template_message(
+            phone=phone,
+            template_name=template_name,
+            language_code=language_code,
+            components=components
         )
-        
+
+        # --- Código antigo (usando send_message) --- 
+        # Formata a data para exibição
+        # formatted_date = appointment_date.strftime("%d/%m/%Y às %H:%M")
+        # 
+        # Cria a mensagem de confirmação
+        # message = (
+        #     f"✅ Agendamento Confirmado!\n\n"
+        #     f"Olá {patient_name},\n\n"
+        #     f"Seu agendamento foi confirmado para:\n"
+        #     f"📅 Data: {formatted_date}\n"
+        #     f"📝 Motivo: {reason}\n\n"
+        #     f"Se precisar reagendar ou cancelar, entre em contato conosco.\n"
+        #     f"Até breve! 👋"
+        # )
+        # 
         # Envia a mensagem
-        return self.send_message(phone, message)
+        # return self.send_message(phone, message)
