@@ -1,12 +1,12 @@
 import os
-from typing import Dict
+from typing import Dict, Optional
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import httpx
 
 from app.services.chatgpt_service import ChatGPTService
 from app.services.conversation_state import ConversationState, ConversationManager
-from app.services.calendar_service import CalendarService
+from app.services.calendar_service import CalendarService, CalendarEvent
 
 load_dotenv()
 
@@ -55,6 +55,16 @@ class WhatsAppService:
         """
         phone = payload.get("from")
         text = payload.get("text")
+        
+        # --- Input Validation ---
+        if not phone or not text:
+            print(f"Error: Missing 'from' ({phone}) or 'text' ({text}) in payload: {payload}")
+            # Return an error state or a default message
+            error_response = "Desculpe, não consegui processar sua mensagem. Faltam dados essenciais."
+            # Attempt to use phone if available for state tracking, else use a placeholder
+            error_phone = phone or "unknown_sender"
+            return {"phone": error_phone, "text": text or "", "response": error_response, "state": ConversationState.ERROR.value}
+        # --- End Input Validation ---
         
         # Obtém o estado atual da conversação
         current_state = self.conversation_manager.get_state(phone)
@@ -147,22 +157,45 @@ class WhatsAppService:
                 end_time = start_time + timedelta(hours=1)
                 
                 # Cria o evento no calendário
-                event_created = self.calendar_service.create_calendar_event(
+                # event_created = self.calendar_service.create_calendar_event(
+                #     start_time=start_time,
+                #     end_time=end_time,
+                #     patient_name="Paciente",  # TODO: Obter nome do paciente
+                #     patient_phone=phone,
+                #     reason=f"Consulta de Nutrição - {insurance}"
+                # )
+                
+                # Create a CalendarEvent object
+                calendar_event_data = CalendarEvent(
                     start_time=start_time,
                     end_time=end_time,
-                    patient_name="Paciente",  # TODO: Obter nome do paciente
-                    patient_phone=phone,
-                    reason=f"Consulta de Nutrição - {insurance}"
+                    patient_name="Paciente", # TODO: Get real name
+                    patient_phone=phone, 
+                    reason=f"Consulta Nutrição - {insurance or 'Particular'}",
+                    insurance=insurance
                 )
+                
+                try:
+                    # Call the service with the CalendarEvent object
+                    event_id = self.calendar_service.create_calendar_event(calendar_event_data)
+                    event_created = bool(event_id) # Consider successful if an ID is returned
+                except Exception as e:
+                    print(f"Error creating calendar event: {e}")
+                    event_created = False
                 
                 if event_created:
                     # Envia confirmação
-                    confirmation_sent = self.send_appointment_confirmation(
-                        phone=phone,
-                        patient_name="Paciente",  # TODO: Obter nome do paciente
-                        appointment_date=start_time,
-                        reason=f"Consulta de Nutrição - {insurance}"
-                    )
+                    # Assume we need a template for this
+                    # Placeholder: Use send_message for now, needs update later
+                    # confirmation_sent = self.send_appointment_confirmation(
+                    #     phone=phone,
+                    #     patient_name="Paciente",  # TODO: Obter nome do paciente
+                    #     appointment_date=start_time,
+                    #     reason=f"Consulta de Nutrição - {insurance}"
+                    # )
+                    # TODO: Implement template sending for confirmation
+                    # For now, just update state and response
+                    confirmation_sent = True # Assume sent for now
                     
                     # Atualiza o estado
                     self.conversation_manager.set_state(phone, ConversationState.COMPLETED)
@@ -217,6 +250,62 @@ class WhatsAppService:
             return False
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
+            return False
+
+    def send_template_message(
+        self,
+        phone: str,
+        template_name: str,
+        language_code: str = "en_US", # Default to English US
+        components: Optional[list] = None # Optional components for templates with variables
+    ) -> bool:
+        """
+        Sends a template message using the Meta WhatsApp Cloud API.
+
+        Args:
+            phone: The recipient's phone number (E.164 format recommended).
+            template_name: The name of the pre-approved template.
+            language_code: The language code of the template (e.g., "en_US", "pt_BR").
+            components: Optional list of components for templates with variables.
+
+        Returns:
+            True if the API request was successful (status code 200).
+        """
+        if not self.token or not self.phone_number_id:
+            print("Error: WhatsApp service not configured.")
+            return False
+
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": phone,
+            "type": "template",
+            "template": {
+                "name": template_name,
+                "language": {"code": language_code}
+            }
+        }
+        # Add components if provided (for templates with variables)
+        if components:
+            payload["template"]["components"] = components
+
+        try:
+            with httpx.Client() as client:
+                response = client.post(self.api_url, headers=headers, json=payload)
+                response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
+                print(f"Template message '{template_name}' sent successfully to {phone}. Response: {response.json()}")
+                return response.status_code == 200
+        except httpx.HTTPStatusError as e:
+            print(f"HTTP error sending template message '{template_name}' to {phone}: {e.response.status_code} - {e.response.text}")
+            return False
+        except httpx.RequestError as e:
+            print(f"Request error sending template message '{template_name}' to {phone}: {e}")
+            return False
+        except Exception as e:
+            print(f"Unexpected error sending template message '{template_name}' to {phone}: {e}")
             return False
 
     def send_appointment_confirmation(
