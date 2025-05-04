@@ -229,6 +229,10 @@ class WhatsAppService:
             "text": {"body": message}
         }
 
+        # --- DEBUG --- 
+        # print(f"DEBUG: Attempting to send message TO: {phone}, Payload: {payload}")
+        # --- END DEBUG ---
+
         try:
             with httpx.Client() as client:
                 response = client.post(self.api_url, headers=headers, json=payload)
