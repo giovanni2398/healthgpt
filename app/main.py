@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
@@ -21,6 +21,7 @@ app.add_middleware(
 app.include_router(whatsapp_router, prefix="/whatsapp")
 
 @app.get("/")
-async def home():
+async def home(request: Request):
     """Endpoint básico para verificar se a API está funcionando."""
+    print(f"Received request at ROOT (/): URL={request.url}, Headers={request.headers}")
     return {"status": "API operacional", "message": "Bem-vindo ao HealthGPT"}
