@@ -16,6 +16,18 @@
 
 HealthGPT is a WhatsApp-based appointment scheduling system for nutritional consultations. The system leverages natural language processing through ChatGPT to understand patient requests and automates the scheduling process through Google Calendar integration.
 
+**Project Purpose:**
+This is a portfolio project developed to demonstrate technical skills in:
+
+- API Integration (WhatsApp, ChatGPT, Google Calendar)
+- Python Backend Development
+- Natural Language Processing
+- System Architecture Design
+- Test-Driven Development
+
+**Important Note:**
+This project is not intended for production use. It serves as a technical demonstration and learning exercise, showcasing the implementation of various technologies and best practices in software development.
+
 ## System Architecture
 
 The system follows a service-oriented architecture with the following key services:
@@ -265,6 +277,9 @@ The current development status as of February 2024:
 - Appointment optimization algorithm
 - Calendar service structure
 - Unit tests for scheduling components
+- WhatsApp template integration
+- ChatGPT message processing
+- Basic error handling
 
 ### In Progress
 
@@ -275,5 +290,43 @@ The current development status as of February 2024:
 
 - Real-world testing with appointment creation/deletion mocked
 - Documentation for new developers
+
+### Portfolio Preparation Plan
+
+1. **Final Integration Testing**
+
+   - Complete end-to-end testing of all features
+   - Validation of all API integrations
+   - Error handling verification
+   - Performance testing
+
+2. **Documentation Updates**
+
+   - Complete API documentation
+   - Setup instructions
+   - Architecture diagrams
+   - Usage examples
+   - Screenshots/demonstrations
+
+3. **Code Cleanup**
+
+   - Code style consistency
+   - Remove debug logs
+   - Optimize imports
+   - Update comments
+
+4. **Repository Organization**
+
+   - Clean commit history
+   - Version tagging
+   - Branch management
+   - Issue tracking
+
+5. **Portfolio Presentation**
+   - Project overview
+   - Technical highlights
+   - Architecture decisions
+   - Learning outcomes
+   - Future improvements
 
 For detailed information about the current implementation status, see [Calendar Integration Status](calendar_integration_status.md).

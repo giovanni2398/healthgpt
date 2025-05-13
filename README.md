@@ -6,7 +6,14 @@ Um sistema inteligente de agendamento de consultas nutricionais via WhatsApp, ut
 
 HealthGPT é um sistema que centraliza o atendimento automatizado via WhatsApp, utiliza IA para análise de mensagens e agenda automaticamente horários disponíveis no Google Calendar. A arquitetura foi simplificada para focar nas funcionalidades essenciais.
 
-**Propósito:** Este projeto foi desenvolvido como um exercício de aprendizado e para compor um portfólio técnico, demonstrando a integração de tecnologias como IA (ChatGPT), APIs externas (WhatsApp Cloud API, Google Calendar API) e desenvolvimento de serviços backend em Python.
+**Propósito:** Este projeto foi desenvolvido exclusivamente como um exercício de aprendizado e para compor um portfólio técnico, demonstrando a integração de tecnologias como IA (ChatGPT), APIs externas (WhatsApp Cloud API, Google Calendar API) e desenvolvimento de serviços backend em Python.
+
+**Importante:** Este projeto não foi desenvolvido para uso em produção. É um projeto demonstrativo que visa:
+
+- Demonstrar habilidades técnicas em integração de APIs
+- Mostrar conhecimentos em desenvolvimento Python
+- Servir como exemplo de implementação de sistemas com IA
+- Compor um portfólio técnico
 
 ## 🌟 Funcionalidades
 
