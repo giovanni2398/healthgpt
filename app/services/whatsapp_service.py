@@ -19,7 +19,7 @@ class WhatsAppService:
     Uses the Meta WhatsApp Cloud API to send messages.
     """
 
-    API_VERSION = "v19.0"
+    API_VERSION = "v20.0"
     
     # Lista de convênios aceitos
     ACCEPTED_INSURANCES = [
@@ -41,6 +41,12 @@ class WhatsAppService:
         self.chatgpt_service = ChatGPTService()
         self.calendar_service = CalendarService()
         self.conversation_manager = ConversationManager()
+
+        # Add debug logging
+        print(f"DEBUG: Token loaded: {'Yes' if self.token else 'No'}")
+        print(f"DEBUG: Phone Number ID loaded: {'Yes' if self.phone_number_id else 'No'}")
+        if self.token:
+            print(f"DEBUG: Token first 10 chars: {self.token[:10]}...")
 
         if not self.token or not self.phone_number_id:
             print("Warning: WhatsApp credentials (Token or Phone Number ID) not found in .env")
@@ -318,7 +324,7 @@ class WhatsAppService:
         patient_name: str,
         appointment_date: datetime,
         reason: str
-    ) -> bool:
+    ) -> tuple:
         """
         Envia uma mensagem de confirmação de agendamento via WhatsApp usando um template.
         
@@ -329,11 +335,10 @@ class WhatsAppService:
             reason: Motivo da consulta (não usado diretamente no template, mas pode ser útil para logs ou futuras variações)
             
         Returns:
-            bool: True se a mensagem foi enviada com sucesso
+            tuple: (success_status, components_list)
         """
         # --- Configuração do Template ---
-        # !!! Substitua pelo nome exato do seu template aprovado !!!
-        template_name = "appointment_confirmation_v1" 
+        template_name = "appointment_confirmation_v2" 
         language_code = "pt_BR"
         
         # --- Formatação das Variáveis ---
@@ -341,40 +346,38 @@ class WhatsAppService:
             # Formata a data e hora para o template (ex: "13/04/2025 - 08:30")
             formatted_date_time = appointment_date.strftime("%d/%m/%Y - %H:%M")
         except AttributeError:
-            # Handle cases where appointment_date might not be a datetime object
             print(f"Error formatting appointment date: {appointment_date}")
             formatted_date_time = "Data/Hora inválida"
-            # Optionally return False or raise an error
-            return False
+            return False, []
 
         # --- Construção dos Componentes (Variáveis) --- 
-        # A estrutura é: corpo (body) com parâmetros (parameters) do tipo texto (text)
         components = [
             {
                 "type": "body",
                 "parameters": [
                     {
                         "type": "text",
+                        "parameter_name": "paciente",
                         "text": patient_name
                     },
                     {
                         "type": "text",
+                        "parameter_name": "data",
                         "text": formatted_date_time
                     }
-                    # Adicione mais parâmetros aqui se seu template tiver mais variáveis
                 ]
             }
-            # Adicione outros tipos de componentes (header, button) se seu template os utilizar
         ]
         
         # --- Envio via Template ---
         print(f"Sending template '{template_name}' to {phone} with components: {components}")
-        return self.send_template_message(
+        success = self.send_template_message(
             phone=phone,
             template_name=template_name,
             language_code=language_code,
             components=components
         )
+        return success, components
 
         # --- Código antigo (usando send_message) --- 
         # Formata a data para exibição

@@ -6,6 +6,8 @@ Um sistema inteligente de agendamento de consultas nutricionais via WhatsApp, ut
 
 HealthGPT é um sistema que centraliza o atendimento automatizado via WhatsApp, utiliza IA para análise de mensagens e agenda automaticamente horários disponíveis no Google Calendar. A arquitetura foi simplificada para focar nas funcionalidades essenciais.
 
+**Propósito:** Este projeto foi desenvolvido como um exercício de aprendizado e para compor um portfólio técnico, demonstrando a integração de tecnologias como IA (ChatGPT), APIs externas (WhatsApp Cloud API, Google Calendar API) e desenvolvimento de serviços backend em Python.
+
 ## 🌟 Funcionalidades
 
 - **Agendamento Inteligente**: Processamento de linguagem natural para entender as solicitações dos pacientes
@@ -172,6 +174,14 @@ pytest app/tests/ -v
    - Consulta é registrada no Google Calendar
    - Confirmação é enviada ao paciente via WhatsApp
 
+## 🛠️ Tecnologias Utilizadas
+
+- **Linguagem:** Python 3.x
+- **APIs:** OpenAI API (ChatGPT), WhatsApp Cloud API (Meta), Google Calendar API
+- **Bibliotecas Principais:** `httpx`, `google-api-python-client`, `google-auth-oauthlib`, `google-auth-httplib2`, `openai`, `python-dotenv`, `pytest`
+- **Gerenciamento de Estado:** Dicionário em memória (`app/services/conversation_state.py`)
+- **Framework Web:** [Ainda não definido/utilizado diretamente - ex: Flask/FastAPI pode ser adicionado se relevante]
+
 ## 🗺️ Roadmap de Desenvolvimento
 
 - **Fase 1: Configuração Base** ✅
@@ -186,17 +196,36 @@ pytest app/tests/ -v
   - Foco nas integrações principais
   - Simplificação da estrutura de API
 
-- **Fase 3: Implementação do Fluxo Principal** 🚧
+- **Fase 3: Implementação do Fluxo Principal** ✅
 
   - Integração WhatsApp → ChatGPT → Google Calendar
   - Processamento de mensagens e confirmações
   - Testes de verificação de disponibilidade
-  - **Status Atual:** Implementamos o algoritmo de otimização de agendamento com horários específicos por dia da semana. Próxima etapa é incluir a integração real com a API do Google Calendar para testes das funcionalidades de verificar horários disponíveis, mantendo os mocks para criação e deleção de eventos para preservar o calendário real da clínica.
+  - **Status Atual:** A integração entre WhatsApp, ChatGPT e Google Calendar está completamente funcional. O sistema agora suporta:
+    - Envio de templates de confirmação via WhatsApp
+    - Versionamento de templates (v1, v2, etc.)
+    - Parâmetros nomeados para personalização
+    - Confirmação automática de agendamentos
+    - Logs detalhados para monitoramento
 
-- **Fase 4: Refinamento e Testes**
-  - Testes unitários e de integração
-  - Ajustes no fluxo de conversação
-  - Validação do processo completo
+### Templates do WhatsApp
+
+O sistema utiliza templates aprovados pela Meta para envio de mensagens. Atualmente implementados:
+
+1. **appointment_confirmation_v2**
+   - Parâmetros:
+     - `paciente`: Nome do paciente
+     - `data`: Data e hora da consulta (formato: DD/MM/YYYY - HH:MM)
+   - Versão atual: v2
+   - Status: ✅ Funcional
+
+### Boas Práticas Implementadas
+
+- Versionamento de templates
+- Parâmetros nomeados
+- Logs detalhados
+- Tratamento de erros
+- Validação de parâmetros
 
 ## 📚 Documentação
 
