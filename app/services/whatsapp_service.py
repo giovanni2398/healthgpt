@@ -377,6 +377,11 @@ class WhatsAppService:
             language_code=language_code,
             components=components
         )
+
+        # Atualiza o estado da conversa se a mensagem foi enviada com sucesso
+        if success:
+            self.conversation_manager.set_state(phone, ConversationState.COMPLETED)
+            
         return success, components
 
         # --- Código antigo (usando send_message) --- 
